@@ -45,6 +45,9 @@ extern "C" {
 
 #include "render_thread.h"
 
+/** \brief Blocks of frame pacing history (see PACING_BLOCKS in directx_renderer_impl.cc) */
+#define PACING_HISTORY_BLOCKS 6
+
 /** \brief Rendering context for the DirectX backend.
  *  \sa video_canvas_s::renderer_context */
 typedef struct vice_directx_renderer_context_s {
@@ -144,7 +147,112 @@ typedef struct vice_directx_renderer_context_s {
     /** \brief the even/odd of the most recent interlaced field */
     int current_interlace_field;
 
+    /** \brief swap chain uses the flip presentation model (needed for VRR / G-Sync in windowed mode) */
+    bool flip_model;
+
+    /** \brief swap chain was created with DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING */
+    bool allow_tearing;
+
+    /** \brief don't try flip model again after it failed once */
+    bool flip_model_failed;
+
+    /*
+     * Frame pacing. The emulator is paced by the audio device and delivers
+     * frames in bursts (several ms of jitter). With VSync on, presents are
+     * spread out evenly at the measured emulated frame rate instead, so a
+     * variable refresh rate display gets a steady rhythm.
+     */
+
+    /** \brief high resolution waitable timer used by the render thread */
+    HANDLE pacing_timer;
+
+    /** \brief when the next frame should be presented (ms), 0 = not started */
+    double pacing_next_ms;
+
+    /** \brief the steady clock's time for the frame being shown (ms) */
+    double pacing_planned_ms;
+
+    /** \brief when the render thread took the frame being shown (ms) */
+    double pacing_dequeued_ms;
+
+    /** \brief paced frames since the pacing (re)started, up to PACING_WARMUP_FRAMES */
+    int pacing_frames;
+
+    /** \brief time between emulated frames used for pacing (ms) */
+    double pacing_period_ms;
+
+    /** \brief measured time between emulated frames, slowly averaged (ms) */
+    double pacing_measured_ms;
+
+    /** \brief clock shift still to be done, positive = later (ms) */
+    double pacing_adjust_ms;
+
+    /** \brief clock shift done since the pacing started (ms) */
+    double pacing_shift_ms;
+
+    /** \brief completion time of the previous frame (ms) */
+    double pacing_last_completed_ms;
+
+    /** \brief least slack seen in the current window, without shifts (ms) */
+    double pacing_min_wait_ms;
+
+    /** \brief frames seen in the current window */
+    int pacing_window_frames;
+
+    /** \brief least slack of each recent block of frames, without shifts (ms) */
+    double pacing_block_min_ms[PACING_HISTORY_BLOCKS];
+
+    /** \brief block of pacing_block_min_ms[] filled next */
+    int pacing_block_index;
+
+    /** \brief refresh rate of the display showing the window (Hz), 0 = unknown */
+    int pacing_display_hz;
+
+    /** \brief paced frames until the display refresh rate is checked again */
+    int pacing_display_check;
+
+    /*
+     * CRT beam simulation (<CHIP>CRTBeamSim). Each frame is first scaled into
+     * crt_source by Direct2D, then a pixel shader draws several subframes from
+     * it into the back buffer, lighting the rows like a rolling CRT scan.
+     */
+
+    /** \brief the scaled emulated frame, render target for Direct2D, shader input */
+    ID3D11Texture2D *crt_source_texture;
+
+    /** \brief shader view of crt_source_texture */
+    ID3D11ShaderResourceView *crt_source_srv;
+
+    /** \brief Direct2D view of crt_source_texture */
+    ID2D1Bitmap1 *crt_source_bitmap;
+
+    /** \brief the swap chain back buffer as a D3D render target */
+    ID3D11RenderTargetView *crt_backbuffer_rtv;
+
+    /** \brief fullscreen triangle vertex shader */
+    ID3D11VertexShader *crt_vertex_shader;
+
+    /** \brief rolling scan pixel shader */
+    ID3D11PixelShader *crt_pixel_shader;
+
+    /** \brief shader parameters */
+    ID3D11Buffer *crt_constants;
+
+    /** \brief shaders could not be created, don't try again */
+    bool crt_failed;
+
+    /** \brief <CHIP>CRTBeamPersistence for the frame being drawn (%) */
+    int crt_persistence;
+
+    /** \brief <CHIP>CRTBeamDecay for the frame being drawn (%) */
+    int crt_decay;
+
+    /** \brief subframes per frame last logged */
+    int crt_logged_subframes;
+
 } vice_directx_renderer_context_t;
+
+double vice_directx_now_ms(void);
 
 void vice_directx_impl_log_windows_error(const char *prefix);
 

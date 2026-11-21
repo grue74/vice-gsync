@@ -477,6 +477,33 @@ static int set_vsync(int val, void *canvas)
     return ui_set_vsync(val, canvas);
 }
 
+/* CRT beam simulation (rolling scan), used by renderers that implement it */
+static int set_crt_beam_sim(int val, void *canvas)
+{
+    ((video_canvas_t *)canvas)->videoconfig->crt_beam_sim = val ? 1 : 0;
+    return 0;
+}
+
+/* CRT beam simulation: part of the frame each pixel stays lit at least (%) */
+static int set_crt_beam_persistence(int val, void *canvas)
+{
+    if (val < 0 || val > 100) {
+        return -1;
+    }
+    ((video_canvas_t *)canvas)->videoconfig->crt_beam_persistence = val;
+    return 0;
+}
+
+/* CRT beam simulation: phosphor fade time constant (% of the frame) */
+static int set_crt_beam_decay(int val, void *canvas)
+{
+    if (val < 0 || val > 100) {
+        return -1;
+    }
+    ((video_canvas_t *)canvas)->videoconfig->crt_beam_decay = val;
+    return 0;
+}
+
 static const char * const vname_chip_gloptions_int[] = {
     "AspectMode",
     "GLFilter",
@@ -484,6 +511,9 @@ static const char * const vname_chip_gloptions_int[] = {
     "FlipY",
     "Rotate",
     "VSync",
+    "CRTBeamSim",
+    "CRTBeamPersistence",
+    "CRTBeamDecay",
     NULL };
 
 /** \brief  Resource registration template for "${CHIP}AspectMode"
@@ -496,6 +526,9 @@ static resource_int_t resources_chip_gloptions_int[] =
     { NULL, 0                     , RES_EVENT_NO, NULL, NULL, set_flipy, NULL },
     { NULL, 0                     , RES_EVENT_NO, NULL, NULL, set_rotate, NULL },
     { NULL, 1                     , RES_EVENT_NO, NULL, NULL, set_vsync, NULL },
+    { NULL, 0                     , RES_EVENT_NO, NULL, NULL, set_crt_beam_sim, NULL },
+    { NULL, 50                    , RES_EVENT_NO, NULL, NULL, set_crt_beam_persistence, NULL },
+    { NULL, 25                    , RES_EVENT_NO, NULL, NULL, set_crt_beam_decay, NULL },
     RESOURCE_INT_LIST_END
 };
 
@@ -1114,6 +1147,9 @@ int video_resources_chip_init(const char *chipname,
         resources_chip_gloptions_int[3].value_ptr = &((*canvas)->videoconfig->flipy);
         resources_chip_gloptions_int[4].value_ptr = &((*canvas)->videoconfig->rotate);
         resources_chip_gloptions_int[5].value_ptr = &((*canvas)->videoconfig->vsync);
+        resources_chip_gloptions_int[6].value_ptr = &((*canvas)->videoconfig->crt_beam_sim);
+        resources_chip_gloptions_int[7].value_ptr = &((*canvas)->videoconfig->crt_beam_persistence);
+        resources_chip_gloptions_int[8].value_ptr = &((*canvas)->videoconfig->crt_beam_decay);
 
         res = resources_register_int(resources_chip_gloptions_int);
         i = 0;

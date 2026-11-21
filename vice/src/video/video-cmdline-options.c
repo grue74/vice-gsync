@@ -231,6 +231,10 @@ static const char * const cname_chip_gloptions[] =
     "+", "rotate", "Rotate",
     "-", "vsync", "VSync",
     "+", "vsync", "VSync",
+    "-", "crtbeamsim", "CRTBeamSim",
+    "+", "crtbeamsim", "CRTBeamSim",
+    "-", "crtbeampersistence", "CRTBeamPersistence",
+    "-", "crtbeamdecay", "CRTBeamDecay",
     NULL
 };
 #endif
@@ -271,6 +275,18 @@ static cmdline_option_t cmdline_options_chip_gloptions[] =
     { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, NULL, (resource_value_t)0,
       NULL, "Disable vsync to allow screen tearing" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)1,
+      NULL, "Enable CRT beam simulation (rolling scan, needs VSync and a fast or VRR display)" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)0,
+      NULL, "Disable CRT beam simulation" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<percent>", "CRT beam simulation: part of the frame each pixel stays lit at least (0 = shortest flash, 100 = no flicker)" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<percent>", "CRT beam simulation: phosphor fade time, in percent of the frame (0 = no afterglow)" },
     CMDLINE_LIST_END
 };
 #endif

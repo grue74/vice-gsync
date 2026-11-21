@@ -27,7 +27,18 @@
 #ifndef VICE_RENDER_QUEUE_H
 #define VICE_RENDER_QUEUE_H
 
+#include "vice.h"
+
+#ifdef WINDOWS_COMPILE
+/*
+ * The DirectX renderer paces presents with VSync on: frames wait a few ms for
+ * their turn while the emulator, driven by the audio device, may already
+ * deliver the next ones in a burst. Room for those, or they would be dropped.
+ */
+#define RENDER_QUEUE_MAX_BACKBUFFERS 4
+#else
 #define RENDER_QUEUE_MAX_BACKBUFFERS 2
+#endif
 
 #include <stdbool.h>
 
@@ -39,6 +50,7 @@ typedef struct {
     unsigned int width;
     unsigned int height;
     float pixel_aspect_ratio;
+    double completed_time_ms;   /**< when the emulator finished the frame (renderer clock, used for frame pacing) */
 } backbuffer_t;
 
 void *render_queue_create(void);

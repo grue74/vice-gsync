@@ -224,6 +224,9 @@ struct video_render_config_s {
     int filter;                    /* VIDEO_FILTER_NONE, VIDEO_FILTER_CRT, VIDEO_FILTER_SCALE2X */
     int glfilter;                  /* <CHIP>GLFilter */
     int vsync;                     /* <CHIP>VSync */
+    int crt_beam_sim;              /* <CHIP>CRTBeamSim */
+    int crt_beam_persistence;      /* <CHIP>CRTBeamPersistence, 0..100 % */
+    int crt_beam_decay;            /* <CHIP>CRTBeamDecay, 0..100 % */
     int external_palette;          /* Use an external palette?  */
     char *external_palette_name;   /* Name of the external palette.  */
     int readable;                  /* reading of frame buffer is safe and fast */
