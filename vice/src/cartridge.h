@@ -182,6 +182,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_C64_256K           -122 /* c64_256k.c */
 #define CARTRIDGE_CPM                -123 /* cpmcart.c */
 #define CARTRIDGE_DEBUGCART          -124 /* debugcart.c */
+#define CARTRIDGE_ULTIMATE_UCI       -125 /* ultimate_uci.c */
 
 /* Known cartridge types.  */
 /* TODO: cartconv (4k and 12k binaries) */
@@ -324,6 +325,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_DREAN              "Drean"
 #define CARTRIDGE_NAME_MIDI_DATEL         "Datel MIDI"
 #define CARTRIDGE_NAME_DEBUGCART          "Debug Cartridge"
+#define CARTRIDGE_NAME_ULTIMATE_UCI       "Ultimate Command Interface"
 #define CARTRIDGE_NAME_DELA_EP64          "Dela EP64"
 #define CARTRIDGE_NAME_DELA_EP7x8         "Dela EP7x8"
 #define CARTRIDGE_NAME_DELA_EP256         "Dela EP256"

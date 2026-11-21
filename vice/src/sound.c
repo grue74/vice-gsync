@@ -1545,7 +1545,8 @@ bool sound_flush(void)
         sid_state_changed = FALSE;
     }
 
-    if (warp_mode_enabled && snddata.recdev == NULL) {
+    /* netsid: a file device (wav: not a timing source) keeps its samples in warp */
+    if (warp_mode_enabled && snddata.recdev == NULL && snddata.playdev->is_timing_source) {
         snddata.bufptr = 0;
         goto done;
     }
@@ -1597,6 +1598,21 @@ bool sound_flush(void)
      *
      * The 'push against the audio device' sync method depends on this.
      */
+
+    /* netsid: in warp the loop below is skipped, and with it every write: write the
+       samples to a file device (wav) and to the recording device here */
+    if (warp_mode_enabled) {
+        if (!snddata.playdev->is_timing_source && snddata.playdev->write
+            && snddata.playdev->write(snddata.buffer, nr * snddata.sound_output_channels)) {
+            sound_error("write to sound device failed.");
+            goto done;
+        }
+        if (snddata.recdev
+            && snddata.recdev->write(snddata.buffer, nr * snddata.sound_output_channels)) {
+            sound_error("write to sound device failed.");
+            goto done;
+        }
+    }
 
     while (!warp_mode_enabled) {
 

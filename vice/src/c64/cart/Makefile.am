@@ -242,6 +242,8 @@ libc64commoncart_a_SOURCES = \
 	digimax.h \
 	ds12c887rtc.c \
 	ds12c887rtc.h \
+	ultimate_uci.c \
+	ultimate_uci.h \
 	ethernetcart.c \
 	ethernetcart.h \
 	georam.c \
