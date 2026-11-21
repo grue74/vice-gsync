@@ -20083,6 +20083,9 @@ The modules in the x128 emulator are:
 @item SID
 @tab 6581
 @tab The SID sound chip of the C64/C128
+@item VDC
+@tab 8563
+@tab The 80 column video chip of the C128
 @item ACIA1
 @tab 6551
 @tab An ACIA at $DE00 (optional)
@@ -20098,8 +20101,7 @@ Some of the modules are optional and are only saved if the specific
 feature is enabled at save-time.  If the module is found when restoring
 the state the optional features are enabled, and disabled otherwise.
 
-Not yet supported are the 80 column video chip, cartridges and
-RAM expansion unit.
+Not yet supported are cartridges and the RAM expansion unit.
 
 @node xvic modules, xpet modules, x128 modules, Emulator modules
 @subsubsection xvic modules
@@ -21170,6 +21172,29 @@ address_space. With a bankname given, switch to the specified
 bank. If a bank is not completely filled (ROM banks for example)
 normally the @code{ram} bank is used where the bank has holes.
 The @code{cpu} bank uses the bank currently used by the CPU.
+
+Cartridges and internal expansions that hold memory which is not always
+visible in the CPU address space (for example RAM behind an I/O window
+or a paged ROM that exposes only one bank at a time) may register
+additional bank arrays.  Each registered region is shown as a named
+group of 64KiB banks (e.g. @code{XX00}--@code{XXNN}); the prefix
+and bank count come from the cartridge.  A cartridge with separate ROM
+and RAM regions registers two such groups.
+
+Bank groups registered by cartridges:
+
+@table @code
+@item reu00-NN
+REU RAM.
+@item geo00-NN
+GEORAM RAM.
+@item mmcrf00-07, mmcrr00-07
+MMC Replay flash ROM and RAM.
+@item rrf00-01, rrr00
+Retro Replay flash ROM and RAM.
+@item efl00-07, efh00-07
+EasyFlash low and high flash chips.
+@end table
 
 @item cpuhistory [<count>] [c:] [8:] [9:] [10:] [11:]
 @itemx chis [<count>] [c:] [8:] [9:] [10:] [11:]

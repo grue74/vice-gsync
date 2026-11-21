@@ -42,6 +42,7 @@
 #include "machine.h"
 #include "maincpu.h"
 #include "mem.h"
+#include "mem_bank_dynamic.h"
 #include "monitor.h"
 #include "ram.h"
 #include "resources.h"
@@ -84,9 +85,11 @@ uint8_t vic20_v_bus_last_data;
 /* Last read data on V-bus (VD8-VD11) */
 uint8_t vic20_v_bus_last_high;
 
+#if USE_MMU_TRANSLATE
 /* Memory read and write tables.  */
 static uint8_t *_mem_read_base_tab[0x101];
 static int mem_read_limit_tab[0x101];
+#endif
 
 /* These ones are used when watchpoints are turned on.  */
 static read_func_ptr_t _mem_read_tab_watch[0x101];
@@ -100,8 +103,10 @@ read_func_ptr_t *_mem_read_tab_ptr;
 store_func_ptr_t *_mem_write_tab_ptr;
 read_func_ptr_t *_mem_read_tab_ptr_dummy;
 store_func_ptr_t *_mem_write_tab_ptr_dummy;
+#if USE_MMU_TRANSLATE
 static uint8_t **_mem_read_base_tab_ptr;
 static int *mem_read_limit_tab_ptr;
+#endif
 
 /* Current watchpoint state.
           0 = no watchpoints
@@ -316,16 +321,20 @@ static void set_mem(int start_page, int end_page,
             _mem_read_tab_nowatch[i] = read_func;
             _mem_write_tab_nowatch[i] = store_func;
             _mem_peek_tab[i] = peek_func;
+#if USE_MMU_TRANSLATE
             _mem_read_base_tab[i] = read_base + ((i << 8) & base_mask);
             mem_read_limit_tab[i] = (end_page << 8) + 0xfd;
+#endif
         }
     } else {
         for (i = start_page; i <= end_page; i++) {
             _mem_read_tab_nowatch[i] = read_func;
             _mem_write_tab_nowatch[i] = store_func;
             _mem_peek_tab[i] = peek_func;
+#if USE_MMU_TRANSLATE
             _mem_read_base_tab[i] = NULL;
             mem_read_limit_tab[i] = 0;
+#endif
         }
     }
 }
@@ -506,11 +515,12 @@ void mem_initialize_memory(void)
     _mem_read_tab_nowatch[0x100] = _mem_read_tab_nowatch[0];
     _mem_write_tab_nowatch[0x100] = _mem_write_tab_nowatch[0];
     _mem_peek_tab[0x100] = _mem_peek_tab[0];
+#if USE_MMU_TRANSLATE
     _mem_read_base_tab[0x100] = _mem_read_base_tab[0];
     mem_read_limit_tab[0x100] = 0;
-
     _mem_read_base_tab_ptr = _mem_read_base_tab;
     mem_read_limit_tab_ptr = mem_read_limit_tab;
+#endif
 
     /* setup watchpoint tables */
     _mem_read_tab_watch[0] = zero_read_watch;
@@ -521,9 +531,12 @@ void mem_initialize_memory(void)
     }
 
     mem_toggle_watchpoints(watchpoints_active, NULL);
+#if USE_MMU_TRANSLATE
     maincpu_resync_limits();
+#endif
 }
 
+#if USE_MMU_TRANSLATE
 void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit)
 {
     uint8_t *p = _mem_read_base_tab_ptr[addr >> 8];
@@ -532,6 +545,7 @@ void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit
     *start = addr; /* TODO */
     *limit = mem_read_limit_tab_ptr[addr >> 8];
 }
+#endif
 
 void mem_toggle_watchpoints(int flag, void *context)
 {
@@ -635,64 +649,58 @@ static const int banknums[MAXBANKS + 1] = { 0, 0, -1 };
 static const int bankindex[MAXBANKS + 1] = { -1, -1, -1 };
 static const int bankflags[MAXBANKS + 1] = { 0, 0, -1 };
 
+static const mem_bank_dynamic_config_t bank_dyn_config = {
+    .base_banknames   = banknames,
+    .base_banknums    = banknums,
+    .base_bankindex   = bankindex,
+    .base_bankflags   = bankflags,
+};
+static mem_bank_dynamic_t bank_dyn = { .cfg = &bank_dyn_config };
+
 const char **mem_bank_list(void)
 {
-    return banknames;
+    return mem_bank_dynamic_list(&bank_dyn);
 }
 
 const int *mem_bank_list_nos(void) {
-    return banknums;
+    return mem_bank_dynamic_list_nos(&bank_dyn);
 }
 
 /* return bank number for a given literal bank name */
 int mem_bank_from_name(const char *name)
 {
-    int i = 0;
-
-    while (banknames[i]) {
-        if (!strcmp(name, banknames[i])) {
-            return banknums[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_from_name(&bank_dyn, name);
 }
 
 /* return current index for a given bank */
 int mem_bank_index_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankindex[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_index_from_bank(&bank_dyn, bank);
 }
 
 int mem_bank_flags_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankflags[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_flags_from_bank(&bank_dyn, bank);
 }
 
 uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
     return mem_read(addr);
 }
 
 /* used by monitor if sfx off */
 uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
     return mem_peek(addr);
 }
 
@@ -706,6 +714,9 @@ uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
 
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)
 {
+    if (mem_bank_dynamic_try_write(&bank_dyn, bank, addr, byte)) {
+        return;
+    }
     mem_store(addr, byte);
 }
 

@@ -54,6 +54,7 @@
 #include "machine.h"
 #include "maincpu.h"
 #include "mem.h"
+#include "mem_bank_dynamic.h"
 #include "monitor.h"
 #include "plus256k.h"
 #include "plus60k.h"
@@ -100,14 +101,18 @@ read_func_ptr_t *_mem_read_tab_ptr;
 store_func_ptr_t *_mem_write_tab_ptr;
 read_func_ptr_t *_mem_read_tab_ptr_dummy;
 store_func_ptr_t *_mem_write_tab_ptr_dummy;
+#if USE_MMU_TRANSLATE
 static uint8_t **_mem_read_base_tab_ptr;
 static uint32_t *mem_read_limit_tab_ptr;
+#endif
 
 /* Memory read and write tables.  */
 static store_func_ptr_t mem_write_tab[NUM_VBANKS][NUM_CONFIGS][0x101];
 static read_func_ptr_t mem_read_tab[NUM_CONFIGS][0x101];
+#if USE_MMU_TRANSLATE
 static uint8_t *mem_read_base_tab[NUM_CONFIGS][0x101];
 static uint32_t mem_read_limit_tab[NUM_CONFIGS][0x101];
+#endif
 
 static store_func_ptr_t mem_write_tab_watch[0x101];
 static read_func_ptr_t mem_read_tab_watch[0x101];
@@ -224,10 +229,11 @@ void mem_pla_config_changed(void)
 
     mem_update_tab_ptrs(watchpoints_active);
 
+#if USE_MMU_TRANSLATE
     _mem_read_base_tab_ptr = mem_read_base_tab[mem_config];
     mem_read_limit_tab_ptr = mem_read_limit_tab[mem_config];
-
     maincpu_resync_limits();
+#endif
 }
 
 /* reads zeropage, 0/1 comes from RAM */
@@ -663,7 +669,9 @@ static void c64_256k_init_config(void)
     int i, j, k;
 
     if (c64_256k_enabled) {
+#if USE_MMU_TRANSLATE
         mem_limit_256k_init();
+#endif
         for (i = 0; i < NUM_CONFIGS; i++) {
             for (j = 1; j <= 0xff; j++) {
                 for (k = 0; k < NUM_VBANKS; k++) {
@@ -710,7 +718,9 @@ static void plus256k_init_config(void)
     int i, j, k;
 
     if (plus256k_enabled) {
+#if USE_MMU_TRANSLATE
         mem_limit_256k_init();
+#endif
         for (i = 0; i < NUM_CONFIGS; i++) {
             for (j = 1; j <= 0xff; j++) {
                 for (k = 0; k < NUM_VBANKS; k++) {
@@ -741,7 +751,9 @@ static void plus60k_init_config(void)
     int i, j, k;
 
     if (plus60k_enabled) {
+#if USE_MMU_TRANSLATE
         mem_limit_plus60k_init();
+#endif
         for (i = 0; i < NUM_CONFIGS; i++) {
             for (j = 0x10; j <= 0xff; j++) {
                 for (k = 0; k < NUM_VBANKS; k++) {
@@ -797,7 +809,7 @@ void mem_read_tab_set(unsigned int base, unsigned int index, read_func_ptr_t rea
     mem_read_tab[base][index] = read_func;
 }
 
-
+#if USE_MMU_TRANSLATE
 /* set c64 base */
 void mem_read_base_set(unsigned int base, unsigned int index, uint8_t *mem_ptr)
 {
@@ -815,6 +827,7 @@ void mem_read_limit_set(unsigned int base, unsigned int index, uint32_t limit)
 {
     mem_read_limit_tab[base][index] = limit;
 }
+#endif
 
 void mem_initialize_memory(void)
 {
@@ -824,9 +837,9 @@ void mem_initialize_memory(void)
     mem_chargen_rom_ptr = mem_chargen_rom;
     mem_color_ram_cpu = mem_color_ram;
     mem_color_ram_vicii = mem_color_ram;
-
+#if USE_MMU_TRANSLATE
     mem_limit_init();
-
+#endif
     /* setup watchpoint tables */
     mem_read_tab_watch[0] = zero_read_watch;
     mem_write_tab_watch[0] = zero_store_watch;
@@ -841,7 +854,9 @@ void mem_initialize_memory(void)
     for (i = 0; i < NUM_CONFIGS; i++) {
         for (j = 0; j <= 0xff; j++) {
             mem_read_tab[i][j] = void_read;
+#if USE_MMU_TRANSLATE
             mem_read_base_tab[i][j] = NULL;
+#endif
             mem_set_write_hook(i, j, void_store);
         }
     }
@@ -850,7 +865,9 @@ void mem_initialize_memory(void)
     for (i = 0; i < NUM_CONFIGS; i++) {
         mem_set_write_hook(i, 0, zero_store);
         mem_read_tab[i][0] = zero_read;
+#if USE_MMU_TRANSLATE
         mem_read_base_tab[i][0] = mem_ram;
+#endif
         for (j = 1; j <= 0xfe; j++) {
             if (board == BOARD_MAX && j >= 0x08) {
                 /* mem_read_tab[i][j] = void_read;
@@ -859,7 +876,9 @@ void mem_initialize_memory(void)
                 continue;
             }
             mem_read_tab[i][j] = ram_read;
+#if USE_MMU_TRANSLATE
             mem_read_base_tab[i][j] = mem_ram;
+#endif
             for (k = 0; k < NUM_VBANKS; k++) {
                 if ((j & 0xc0) == (k << 6)) {
                     switch (j & 0x3f) {
@@ -883,7 +902,9 @@ void mem_initialize_memory(void)
             mem_set_write_hook(0, 0xff, void_store); */
         } else {
             mem_read_tab[i][0xff] = ram_read;
+#if USE_MMU_TRANSLATE
             mem_read_base_tab[i][0xff] = mem_ram;
+#endif
 
             /* vbank access is handled within `ram_hi_store()'.  */
             mem_set_write_hook(i, 0xff, ram_hi_store);
@@ -903,6 +924,7 @@ void mem_initialize_memory(void)
         mem_read_tab[26][i] = chargen_read;
         mem_read_tab[27][i] = chargen_read;
 #if 1
+#if USE_MMU_TRANSLATE
         mem_read_base_tab[1][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
         mem_read_base_tab[2][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
         mem_read_base_tab[3][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
@@ -911,7 +933,9 @@ void mem_initialize_memory(void)
         mem_read_base_tab[11][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
         mem_read_base_tab[26][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
         mem_read_base_tab[27][i] = (uint8_t *)((uintptr_t)mem_chargen_rom - (uintptr_t)0xd000);
+#endif
 #else
+#if USE_MMU_TRANSLATE
         mem_read_base_set(1, i, (uint8_t*)addr);
         mem_read_base_set(2, i, (uint8_t*)addr);
         mem_read_base_set(3, i, (uint8_t*)addr);
@@ -930,6 +954,7 @@ void mem_initialize_memory(void)
         mem_read_addr_set(26, i, (uintptr_t)mem_chargen_rom);
         mem_read_addr_set(27, i, (uintptr_t)mem_chargen_rom);
 #endif
+#endif
     }
 
     c64meminit(0);
@@ -939,14 +964,17 @@ void mem_initialize_memory(void)
         for (j = 0; j < NUM_VBANKS; j++) {
             mem_write_tab[j][i][0x100] = mem_write_tab[j][i][0];
         }
+#if USE_MMU_TRANSLATE
         mem_read_base_tab[i][0x100] = mem_read_base_tab[i][0];
+#endif
     }
 
     _mem_read_tab_ptr = mem_read_tab[7];
     _mem_write_tab_ptr = mem_write_tab[vbank][7];
+#if USE_MMU_TRANSLATE
     _mem_read_base_tab_ptr = mem_read_base_tab[7];
     mem_read_limit_tab_ptr = mem_read_limit_tab[7];
-
+#endif
     vicii_set_chargen_addr_options(0x7000, 0x1000);
 
     c64pla_pport_reset();
@@ -963,11 +991,14 @@ void mem_initialize_memory(void)
     plus256k_init_config();
     c64_256k_init_config();
 
+#if USE_MMU_TRANSLATE
     if (board == BOARD_MAX) {
         mem_limit_max_init();
     }
+#endif
 }
 
+#if USE_MMU_TRANSLATE
 void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit)
 {
     uint8_t *p = _mem_read_base_tab_ptr[addr >> 8];
@@ -982,6 +1013,7 @@ void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit
         cartridge_mmu_translate(addr, base, start, limit);
     }
 }
+#endif
 
 /* ------------------------------------------------------------------------- */
 
@@ -1251,54 +1283,38 @@ static const int banknums[] = { 0, 0, 1, 2, 3, 4, -1 };
 static const int bankindex[] = { -1, -1, -1, -1, -1, -1, -1 };
 static const int bankflags[] = { 0, 0, 0, 0, 0, 0, -1 };
 
+static const mem_bank_dynamic_config_t bank_dyn_config = {
+    .base_banknames   = banknames,
+    .base_banknums    = banknums,
+    .base_bankindex   = bankindex,
+    .base_bankflags   = bankflags,
+};
+static mem_bank_dynamic_t bank_dyn = { .cfg = &bank_dyn_config };
+
 const char **mem_bank_list(void)
 {
-    return banknames;
+    return mem_bank_dynamic_list(&bank_dyn);
 }
 
 const int *mem_bank_list_nos(void) {
-    return banknums;
+    return mem_bank_dynamic_list_nos(&bank_dyn);
 }
 
 /* return bank number for a given literal bank name */
 int mem_bank_from_name(const char *name)
 {
-    int i = 0;
-
-    while (banknames[i]) {
-        if (!strcmp(name, banknames[i])) {
-            return banknums[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_from_name(&bank_dyn, name);
 }
 
 /* return current index for a given bank */
 int mem_bank_index_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankindex[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_index_from_bank(&bank_dyn, bank);
 }
 
 int mem_bank_flags_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankflags[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_flags_from_bank(&bank_dyn, bank);
 }
 
 int     mem_get_current_bank_config(void) {
@@ -1308,6 +1324,12 @@ int     mem_get_current_bank_config(void) {
 /* read memory with side-effects */
 uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
+
     switch (bank) {
         case 0:                   /* current */
             return mem_read(addr);
@@ -1392,6 +1414,12 @@ uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
 
 uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
+
     switch (bank) {
         case 0: /* CPU */
             return mem_peek_with_config(mem_config, addr, context);
@@ -1421,6 +1449,10 @@ uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
 
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)
 {
+    if (mem_bank_dynamic_try_write(&bank_dyn, bank, addr, byte)) {
+        return;
+    }
+
     switch (bank) {
         case 0:                   /* current */
             mem_store(addr, byte);

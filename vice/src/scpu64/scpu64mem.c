@@ -47,6 +47,7 @@
 #include "machine.h"
 #include "main65816cpu.h"
 #include "mem.h"
+#include "mem_bank_dynamic.h"
 #include "monitor.h"
 #include "ram.h"
 #include "reu.h"
@@ -59,6 +60,14 @@
 #include "wdc65816.h"
 #include "vicii-cycle.h"
 #include "traps.h"
+
+/* #define DEBUG_SCPUMEM */
+
+#ifdef DEBUG_SCPUMEM
+#define DBG(x)  log_printf x
+#else
+#define DBG(x)
+#endif
 
 /* Machine class */
 int machine_class = VICE_MACHINE_SCPU64;
@@ -109,14 +118,18 @@ uint8_t *mem_chargen_rom_ptr;
 /* Pointers to the currently used memory read and write tables.  */
 read_func_ptr_t *_mem_read_tab_ptr;
 store_func_ptr_t *_mem_write_tab_ptr;
+#if USE_MMU_TRANSLATE
 static uint8_t **_mem_read_base_tab_ptr;
 static uint32_t *mem_read_limit_tab_ptr;
+#endif
 
 /* Memory read and write tables.  */
 static store_func_ptr_t mem_write_tab[NUM_MIRRORS][NUM_CONFIGS][0x101];
 static read_func_ptr_t mem_read_tab[NUM_CONFIGS][0x101];
+#if USE_MMU_TRANSLATE
 static uint8_t *mem_read_base_tab[NUM_CONFIGS][0x101];
 static uint32_t mem_read_limit_tab[NUM_CONFIGS][0x101];
+#endif
 
 static store_func_ptr_t mem_write_tab_watch[0x101];
 static read_func_ptr_t mem_read_tab_watch[0x101];
@@ -225,10 +238,11 @@ void mem_pla_config_changed(void)
         _mem_write_tab_ptr = mem_write_tab[mirror][mem_config];
     }
 
+#if USE_MMU_TRANSLATE
     _mem_read_base_tab_ptr = mem_read_base_tab[mem_config];
     mem_read_limit_tab_ptr = mem_read_limit_tab[mem_config];
-
     maincpu_resync_limits();
+#endif
 }
 
 static void pport_store(uint16_t addr, uint8_t value)
@@ -1286,6 +1300,7 @@ void mem_read_tab_set(unsigned int base, unsigned int index, read_func_ptr_t rea
     mem_read_tab[base][index] = read_func;
 }
 
+#if USE_MMU_TRANSLATE
 /* set c64 base */
 void mem_read_base_set(unsigned int base, unsigned int index, uint8_t *mem_ptr)
 {
@@ -1298,6 +1313,7 @@ void mem_read_addr_set(unsigned int base, unsigned int index, uintptr_t addr)
 {
     mem_read_base_tab[base][index] += addr;
 }
+#endif
 #endif
 
 void mem_initialize_memory(void)
@@ -1321,7 +1337,9 @@ void mem_initialize_memory(void)
     for (i = 0; i < NUM_CONFIGS - 0x20; i++) {
         for (j = 0; j <= 0xff; j++) {
             mem_read_tab[i][j] = ram_read;
+#if USE_MMU_TRANSLATE
             mem_read_base_tab[i][j] = mem_sram;
+#endif
             for (l = 0; l < NUM_MIRRORS; l++) {
                 if (mem_mirrors[l] && (mem_mirrors[l] >> 8) <= j && (mem_mirrors[l] & 0xff) >= j) {
                     /* mirrored */
@@ -1348,7 +1366,9 @@ void mem_initialize_memory(void)
     for (i = NUM_CONFIGS - 0x20; i < NUM_CONFIGS; i++) {
         for (j = 0; j <= 0xff; j++) {
             mem_read_tab[i][j] = ram_read_int;
+#if USE_MMU_TRANSLATE
             mem_read_base_tab[i][j] = mem_ram;
+#endif
             for (l = 0; l < NUM_MIRRORS; l++) {
                 if (j == 0) {
                     mem_write_tab[l][i][j] = zero_store_int;
@@ -1368,9 +1388,12 @@ void mem_initialize_memory(void)
             for (l = 0; l < NUM_MIRRORS; l++) {
                 mem_write_tab[l][i][0x100] = mem_write_tab[l][i][0];
             }
+#if USE_MMU_TRANSLATE
         mem_read_base_tab[i][0x100] = mem_read_base_tab[i][0];
+#endif
     }
 
+#if USE_MMU_TRANSLATE
     /* A fully automatic limit filler ;) */
     for (i = 0; i < NUM_CONFIGS; i++) {
         for (j = 0, l = 1; j <= 0xff; l++) {
@@ -1390,6 +1413,7 @@ void mem_initialize_memory(void)
         }
         mem_read_limit_tab[i][0x100] = 0;
     }
+#endif
 
     vicii_set_chargen_addr_options(0x7000, 0x1000);
 
@@ -1403,6 +1427,7 @@ void mem_initialize_memory(void)
     cartridge_init_config();
 }
 
+#if USE_MMU_TRANSLATE
 void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit)
 {
     uint8_t *p;
@@ -1456,6 +1481,7 @@ void mem_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit
         }
     }
 }
+#endif
 
 /* ------------------------------------------------------------------------- */
 
@@ -1886,13 +1912,21 @@ static const int bankflags[MAXBANKS + 1] =
     -2
 };
 
+static const mem_bank_dynamic_config_t bank_dyn_config = {
+    .base_banknames   = banknames,
+    .base_banknums    = banknums,
+    .base_bankindex   = bankindex,
+    .base_bankflags   = bankflags,
+};
+static mem_bank_dynamic_t bank_dyn = { .cfg = &bank_dyn_config };
+
 const char **mem_bank_list(void)
 {
-    return banknames;
+    return mem_bank_dynamic_list(&bank_dyn);
 }
 
 const int *mem_bank_list_nos(void) {
-    return banknums;
+    return mem_bank_dynamic_list_nos(&bank_dyn);
 }
 
 #if 0
@@ -1908,47 +1942,28 @@ const int *mem_bank_list_flags(void) {
 /* return bank number for a given literal bank name */
 int mem_bank_from_name(const char *name)
 {
-    int i = 0;
-
-    while (banknames[i]) {
-        if (!strcmp(name, banknames[i])) {
-            return banknums[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_from_name(&bank_dyn, name);
 }
 
 /* return current index for a given bank */
 int mem_bank_index_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankindex[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_index_from_bank(&bank_dyn, bank);
 }
 
 int mem_bank_flags_from_bank(int bank)
 {
-    int i = 0;
-
-    while (banknums[i] > -1) {
-        if (banknums[i] == bank) {
-            return bankflags[i];
-        }
-        i++;
-    }
-    return -1;
+    return mem_bank_dynamic_flags_from_bank(&bank_dyn, bank);
 }
 
 /* read memory with side-effects */
 uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
     if ((bank >= 5) && (bank <= 6)) {
         return mem_sram[((bank - 5) << 16) + addr]; /* ram00..01 */
     }
@@ -2001,6 +2016,11 @@ uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 /* read memory without side-effects */
 uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
 {
+    uint8_t v;
+
+    if (mem_bank_dynamic_try_read(&bank_dyn, bank, addr, &v)) {
+        return v;
+    }
     if ((bank >= 5) && (bank <= 260)) {
         return mem_bank_read(bank, addr, context); /* ram00..ff */
     }
@@ -2013,11 +2033,23 @@ uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
             /* we must check for which bank is currently active, and only use peek_bank_io
                when needed to avoid side effects */
             if ((addr >= 0xd000) && (addr < 0xe000)) {
+#if USE_MMU_TRANSLATE
                 if (_mem_read_base_tab_ptr[0xd2] == mem_sram + 0x10000) {
                     return peek_bank_io(addr);
                 }
+#else
+                /* FIXME: the current bank must be checked by other means, we
+                          can't use the base pointer here */
+                int config = (mem_config & 7);
+                /* this should be true for all configs that assigned mem_sram + 0x10000 in scpu64meminit() */
+                if ((config == 5) || (config == 6) || (config == 7)) {
+                    DBG(("mem_bank_peek bank:%d addr:%04x calls peek_bank_io", bank, addr));
+                    return peek_bank_io(addr);
+                }
+                DBG(("mem_bank_peek bank:%d addr:%04x calls mem_read", bank, addr));
+#endif
             }
-            return mem_read(addr);
+            return mem_read(addr); /* this has side effects */
             break;
         case 3:                   /* io */
             if ((addr >= 0xd000) && (addr < 0xe000)) {
@@ -2041,6 +2073,9 @@ uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
 
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)
 {
+    if (mem_bank_dynamic_try_write(&bank_dyn, bank, addr, byte)) {
+        return;
+    }
     if ((bank >= 5) && (bank <= 6)) {
         mem_sram[((bank - 5) << 16) + addr] = byte; /* ram00..01 */
         return;
@@ -2165,7 +2200,9 @@ void mem_set_simm_size(int val)
             mem_simm_page_size = 11 + 2;  /* 4,3 */
             break;
     }
+#if USE_MMU_TRANSLATE
     maincpu_resync_limits();
+#endif
 }
 
 void mem_set_jiffy_switch(int val)
