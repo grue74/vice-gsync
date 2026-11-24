@@ -93,6 +93,7 @@ static int sid_residfp_filter_c1;
 static int sid_residfp_filter_c2;
 static int sid_residfp_6581_dac_ratio;
 static int sid_residfp_6581_snake;
+static int sid_residfp_6581_resonance_q;
 static int sid_residfp_resonance_strength;
 static int sid_residfp_6581_opamp_gain;
 #endif
@@ -527,6 +528,19 @@ static int set_sid_residfp_6581_snake(int val, void *param)
     return 0;
 }
 
+/* 6581 resonance Q scale: applied live, no SID re-init */
+static int set_sid_residfp_6581_resonance_q(int val, void *param)
+{
+    if (val < RESIDFP_6581_RESONANCE_Q_MIN) {
+        val = RESIDFP_6581_RESONANCE_Q_MIN;
+    } else if (val > RESIDFP_6581_RESONANCE_Q_MAX) {
+        val = RESIDFP_6581_RESONANCE_Q_MAX;
+    }
+    sid_residfp_6581_resonance_q = val;
+    residfp_set_resonance_q(val);
+    return 0;
+}
+
 /* resonance strength (both models): applied live */
 static int set_sid_residfp_resonance_strength(int val, void *param)
 {
@@ -691,6 +705,8 @@ static const resource_int_t residfp_resources_int[] = {
       &sid_residfp_6581_dac_ratio, set_sid_residfp_6581_dac_ratio, NULL },
     { "SidResid6581Snake", RESIDFP_6581_SNAKE_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_6581_snake, set_sid_residfp_6581_snake, NULL },
+    { "SidResid6581ResonanceQ", RESIDFP_6581_RESONANCE_Q_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_resonance_q, set_sid_residfp_6581_resonance_q, NULL },
     { "SidResidResonanceStrength", RESIDFP_RESONANCE_STRENGTH_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_resonance_strength, set_sid_residfp_resonance_strength, NULL },
     { "SidResid6581OpampGain", RESIDFP_6581_OPAMP_GAIN_DEFAULT, RES_EVENT_NO, NULL,

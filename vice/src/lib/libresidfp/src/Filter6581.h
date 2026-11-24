@@ -330,6 +330,19 @@ private:
 
     const uint16_t* f0_dac;
 
+    /// board capacitors relative to nominal
+    double capC1 = 1.0;
+    double capC2 = 1.0;
+
+    /// resonance Q scale, applied as an integrator rate ratio
+    double resonanceQ = 1.0;
+
+    void applyIntegratorRates()
+    {
+        hpIntegrator.setCapacitor(capC2 * resonanceQ);
+        bpIntegrator.setCapacitor(capC1 / resonanceQ);
+    }
+
 protected:
     /**
      * Set filter cutoff frequency.
@@ -350,7 +363,17 @@ protected:
 
 public:
     // hpIntegrator turns Vhp into Vbp (CAP2), bpIntegrator Vbp into Vlp (CAP1)
-    void setCapacitors(double c1, double c2) override { hpIntegrator.setCapacitor(c2); bpIntegrator.setCapacitor(c1); }
+    void setCapacitors(double c1, double c2) override { capC1 = c1; capC2 = c2; applyIntegratorRates(); }
+
+    /**
+     * Resonance Q scale (1.0 = nominal). Slows the Vhp->Vbp integrator by q
+     * and speeds up the Vbp->Vlp integrator by q, so Q scales by q while the
+     * cutoff (set by the product of the two rates) stays. Unlike resonance
+     * strength it works at every resonance value, 15 included, and leaves
+     * the bandpass peak level as it is. A property of the chip model, kept
+     * apart from the board capacitors.
+     */
+    void setResonanceQ(double q) { resonanceQ = q; applyIntegratorRates(); }
 
     /// Scale the snake W/L of both integrators (1.0 = nominal)
     void setSnakeScale(double scale) { hpIntegrator.setSnakeScale(scale); bpIntegrator.setSnakeScale(scale); }

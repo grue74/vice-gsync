@@ -66,8 +66,8 @@ public:
      */
     void setCapacitor(double relative)
     {
-        if (relative < 0.5) relative = 0.5;
-        if (relative > 2.0) relative = 2.0;
+        if (relative < 0.25) relative = 0.25;
+        if (relative > 4.0) relative = 4.0;
         capScale = static_cast<int32_t>(65536.0 / relative + 0.5);
     }
 };

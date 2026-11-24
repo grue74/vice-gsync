@@ -24,6 +24,7 @@
  * $VICERES SidResid6581Snake       vsid
  * $VICERES SidResidResonanceStrength vsid
  * $VICERES SidResid6581OpampGain   vsid
+ * $VICERES SidResid6581ResonanceQ  vsid
  * $VICERES SidFilters              vsid
  * $VICERES SidEngine               vsid
  * $VICERES SidModel                vsid
@@ -205,6 +206,13 @@ static const mixer_scale_t fp_scales_6581[] = {
       " 15). Higher = stronger resonance peak and a different distortion, but"
       " also a higher cutoff (about x2 at 2.00): compensate with Filter range."
       " Applied when the slider stops moving." },
+    { "Resonance Q", "SidResid6581ResonanceQ", "\xc3\x97%1.2f",
+      RESIDFP_6581_RESONANCE_Q_MIN, RESIDFP_6581_RESONANCE_Q_MAX,
+      (double)RESIDFP_6581_RESONANCE_Q_MIN / RESIDFP_6581_RESONANCE_Q_ONE,
+      (double)RESIDFP_6581_RESONANCE_Q_MAX / RESIDFP_6581_RESONANCE_Q_ONE, 0.01,
+      "Scales the 6581 filter Q at every resonance value, 15 included, without"
+      " moving the cutoff or raising the bandpass level. Resonance strength has"
+      " no effect at resonance 15; this does. Applies while playing." },
     { NULL, NULL, NULL, 0, 0, 0, 0, 0, NULL }
 };
 

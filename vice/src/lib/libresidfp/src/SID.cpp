@@ -672,6 +672,11 @@ void SID::setFilter6581SnakeScale(double scale)
     filter6581->setSnakeScale(scale);
 }
 
+void SID::setFilter6581ResonanceQ(double q)
+{
+    filter6581->setResonanceQ(q);
+}
+
 void SID::setFilterCapacitors(double c1, double c2)
 {
     filter6581->setCapacitors(c1, c2);

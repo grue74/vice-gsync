@@ -50,6 +50,7 @@
  * $VICERES SidResid6581DacRatio        all
  * $VICERES SidResid6581Snake           all
  * $VICERES SidResid6581OpampGain       all
+ * $VICERES SidResid6581ResonanceQ      all
  * $VICERES SidResidResonanceStrength   all
  *
  * These are related to USBSID
@@ -198,6 +199,10 @@ static const slider_t fp_sliders_6581[] = {
       (double)RESIDFP_6581_OPAMP_GAIN_MIN / RESIDFP_6581_OPAMP_GAIN_ONE,
       (double)RESIDFP_6581_OPAMP_GAIN_MAX / RESIDFP_6581_OPAMP_GAIN_ONE,
       RESIDFP_6581_OPAMP_GAIN_MIN, RESIDFP_6581_OPAMP_GAIN_MAX, 0.01f },
+    { "6581 resonance Q", "SidResid6581ResonanceQ",          "\xc3\x97%1.2f",
+      (double)RESIDFP_6581_RESONANCE_Q_MIN / RESIDFP_6581_RESONANCE_Q_ONE,
+      (double)RESIDFP_6581_RESONANCE_Q_MAX / RESIDFP_6581_RESONANCE_Q_ONE,
+      RESIDFP_6581_RESONANCE_Q_MIN, RESIDFP_6581_RESONANCE_Q_MAX, 0.01f },
     { NULL,            NULL,                     NULL,          0,    0, 0,    0, 0 }
 };
 

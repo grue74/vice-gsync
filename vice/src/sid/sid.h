@@ -225,6 +225,14 @@ enum {
 #define RESIDFP_6581_OPAMP_GAIN_ONE               1000
 #define RESIDFP_6581_OPAMP_GAIN_DEFAULT           1000
 
+/* 6581 resonance Q scale x1000: scales Q at every resonance value (15
+   included) without moving the cutoff; the chip-model counterpart of a
+   C2/C1 capacitor mismatch */
+#define RESIDFP_6581_RESONANCE_Q_MIN              500
+#define RESIDFP_6581_RESONANCE_Q_MAX              2000
+#define RESIDFP_6581_RESONANCE_Q_ONE              1000
+#define RESIDFP_6581_RESONANCE_Q_DEFAULT          1000
+
 
 void machine_sid2_enable(int val);
 

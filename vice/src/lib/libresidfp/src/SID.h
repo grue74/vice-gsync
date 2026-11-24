@@ -417,6 +417,13 @@ public:
     void setFilter6581SnakeScale(double scale);
 
     /**
+     * Scale the 6581 filter Q (1.0 = nominal) at every resonance value
+     * without moving the cutoff. Per chip, cheap, can be changed while
+     * playing.
+     */
+    void setFilter6581ResonanceQ(double q);
+
+    /**
      * Resonance strength for both models (1.0 = nominal, 2.0 = double Q).
      * Shared by all chips; rebuilds a table, call only on a change.
      */

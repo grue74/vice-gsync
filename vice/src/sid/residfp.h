@@ -41,6 +41,9 @@ void residfp_set_dac_ratio(int ratio);
 /* Set the 6581 snake W/L scale (x1000) of all reSIDfp chips, live. */
 void residfp_set_snake_scale(int scale);
 
+/* Set the 6581 resonance Q scale (x1000) of all reSIDfp chips, live. */
+void residfp_set_resonance_q(int q);
+
 /* Set the resonance strength (x1000, both models) and the 6581 op-amp gain
    (x1000). These rebuild tables shared by all chips (~50 ms each), so they
    are applied once the value has stayed the same for a moment. */

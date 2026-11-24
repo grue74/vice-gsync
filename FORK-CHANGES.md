@@ -288,11 +288,30 @@ reSIDfp used one value for both capacitors.
   and op-amp gain on the VSID panel, on Settings > Audio > SID (6581 block:
   snake, op-amp gain; both models: resonance strength) and in the status-bar
   mixer (reSIDfp only; the 6581 ones only with a 6581).
+- **6581 resonance Q**: scales Q at every resonance value, 15 and 0
+  included, without moving the cutoff. The Vhp->Vbp integrator runs 1/q as
+  fast and the Vbp->Vlp one q times as fast; the cutoff follows the product
+  of the two rates, Q their ratio (in the linear model Q ~ sqrt(C2/C1)/k).
+  This is what a C2 > C1 cap mismatch does, but as a property of the chip
+  model, so fits to a real chip don't have to push the board caps to
+  unrealistic values. Resonance strength can't do it on the 6581: its ladder
+  gain is zero at resonance 15, and it also raises the bandpass peak.
+  Resource `SidResid6581ResonanceQ` (x1000, 500..2000, default 1000; option
+  `-resid6581resonanceq`), per chip and live like the caps. Library:
+  `Filter6581::setResonanceQ`, `SID::setFilter6581ResonanceQ` (the
+  integrator capacitor clamp is widened to x0.25..x4 so caps and Q combine).
+  Sliders on the VSID panel, Settings > Audio > SID and the status-bar mixer.
+  Checked against three recordings of a real 6581R4 (one tune at resonance
+  15, one at 0): matched caps with Q x1.106 score the same as the fitted
+  C1 -10 % / C2 +10 % (3.627 vs 3.628, every tune within 0.001), and a refit
+  with the caps held at 0 % found nothing better.
 - **Own filter settings** ("My settings" on the VSID panel, "My filter
   settings" on Settings > Audio > SID): save every filter value (reSID and
   reSIDfp sliders, C1/C2, DAC ratio, snake, resonance strength, op-amp gain,
-  combined waveforms, old caps, filter on/off; not the engine or model) under
-  a name, load it by choosing it from the list, delete it. Both places share
+  resonance Q, combined waveforms, old caps, filter on/off; not the engine or
+  model) under a name, load it by choosing it from the list, delete it. A
+  value missing from a saved setting (saved before that slider existed) is
+  set to its default on loading, so a setting always sounds the same. Both places share
   one list, stored in `sidfilter-presets.txt` in the VICE configuration
   directory, one line per preset (`widgets/sidfilterpresets.c`).
 

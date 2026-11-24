@@ -55,6 +55,7 @@ static const char *preset_resources[] = {
     "SidResid6581OldCaps", "SidResidCombinedWaveformStrength",
     "SidResidFilterC1", "SidResidFilterC2", "SidResid6581DacRatio",
     "SidResid6581Snake", "SidResidResonanceStrength", "SidResid6581OpampGain",
+    "SidResid6581ResonanceQ",
     NULL
 };
 
@@ -160,11 +161,37 @@ static char *presets_capture(void)
     return result;
 }
 
-/** \brief  Set the resources of a preset ("Res=val;Res=val") */
+/** \brief  Set the resources of a preset ("Res=val;Res=val")
+ *
+ * Resources the preset doesn't name (saved before they existed) are set to
+ * their defaults, so a preset always gives the same sound.
+ */
 static void presets_apply(const char *values)
 {
     gchar **pairs = g_strsplit(values, ";", -1);
     int i;
+
+    for (i = 0; preset_resources[i] != NULL; i++) {
+        size_t len = strlen(preset_resources[i]);
+        const char *p = values;
+        int named = 0;
+        int def;
+
+        while (p != NULL && *p != '\0') {
+            if (strncmp(p, preset_resources[i], len) == 0 && p[len] == '=') {
+                named = 1;
+                break;
+            }
+            p = strchr(p, ';');
+            if (p != NULL) {
+                p++;
+            }
+        }
+        if (!named && resources_query_type(preset_resources[i]) == RES_INTEGER
+                && resources_get_default_value(preset_resources[i], &def) == 0) {
+            resources_set_int(preset_resources[i], def);
+        }
+    }
 
     for (i = 0; pairs[i] != NULL; i++) {
         gchar *eq = strchr(pairs[i], '=');

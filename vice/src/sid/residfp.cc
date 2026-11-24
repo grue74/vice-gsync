@@ -96,6 +96,7 @@ static volatile int residfp_caps_c1 = 0;
 static volatile int residfp_caps_c2 = 0;
 static volatile int residfp_dac_ratio = 2200;
 static volatile int residfp_snake_scale = 1000;
+static volatile int residfp_resonance_q = 1000;
 
 /* resonance strength and 6581 op-amp gain: tables shared by all chips, rebuilt
    on the sound side once the value has been still for TABLES_SETTLE_MS */
@@ -168,6 +169,12 @@ void residfp_set_snake_scale(int scale)
     residfp_caps_gen = residfp_caps_gen + 1;
 }
 
+void residfp_set_resonance_q(int q)
+{
+    residfp_resonance_q = q;
+    residfp_caps_gen = residfp_caps_gen + 1;
+}
+
 static void residfp_apply_filter_caps(sound_t *psid)
 {
     unsigned int gen = residfp_caps_gen;
@@ -180,6 +187,7 @@ static void residfp_apply_filter_caps(sound_t *psid)
                                        1.0 + residfp_caps_c2 / 1000.0);
         psid->sid->setFilter6581DacRatio(residfp_dac_ratio / 1000.0);
         psid->sid->setFilter6581SnakeScale(residfp_snake_scale / 1000.0);
+        psid->sid->setFilter6581ResonanceQ(residfp_resonance_q / 1000.0);
     }
 }
 
