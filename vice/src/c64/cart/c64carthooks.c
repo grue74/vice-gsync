@@ -85,6 +85,7 @@
 #include "dqbb.h"
 #include "drean.h"
 #include "ds12c887rtc.h"
+#include "ultimate_uci.h"
 #include "easycalc.h"
 #include "easyflash.h"
 #include "epyxfastload.h"
@@ -527,6 +528,7 @@ int cart_cmdline_options_init(void)
 #endif
         || digimax_cmdline_options_init() < 0
         || ds12c887rtc_cmdline_options_init() < 0
+        || ultimate_uci_cmdline_options_init() < 0
         || georam_cmdline_options_init() < 0
         || reu_cmdline_options_init() < 0
         || sfx_soundexpander_cmdline_options_init() < 0
@@ -590,6 +592,7 @@ int cart_resources_init(void)
         /* "IO Slot" */
         || digimax_resources_init() < 0
         || ds12c887rtc_resources_init() < 0
+        || ultimate_uci_resources_init() < 0
         || georam_resources_init() < 0
 #ifdef HAVE_MIDI
         || c64_midi_resources_init() < 0
@@ -642,6 +645,7 @@ void cart_resources_shutdown(void)
     /* "IO Slot" */
     digimax_resources_shutdown();
     ds12c887rtc_resources_shutdown();
+    ultimate_uci_resources_shutdown();
     georam_resources_shutdown();
 #ifdef HAVE_MIDI
     midi_resources_shutdown();
@@ -2418,6 +2422,9 @@ void cartridge_reset(void)
     }
     if (ds12c887rtc_cart_enabled()) {
         ds12c887rtc_reset();
+    }
+    if (ultimate_uci_cart_enabled()) {
+        ultimate_uci_reset();
     }
     if (georam_cart_enabled()) {
         georam_reset();
