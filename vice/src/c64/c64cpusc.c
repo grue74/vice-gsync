@@ -28,8 +28,8 @@
 
 #include <stdio.h>
 
-#include "c64meminit.h"
 #include "cpmcart.h"
+#include "c64turbo.h"
 #include "mainc64cpu.h"
 #include "monitor.h"
 #include "vicii-cycle.h"

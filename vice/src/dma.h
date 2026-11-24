@@ -31,4 +31,7 @@
 
 void dma_maincpu_steal_cycles(CLOCK start_clk, CLOCK num, CLOCK sub);
 
+/* when set, the CPU is not stopped by DMA (x64 CPU turbo without badlines) */
+extern int dma_maincpu_steal_disabled;
+
 #endif

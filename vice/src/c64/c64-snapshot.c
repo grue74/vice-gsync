@@ -34,6 +34,7 @@
 #include "c64.h"
 #include "c64gluelogic.h"
 #include "c64memsnapshot.h"
+#include "c64turbo.h"
 #include "cia.h"
 #include "drive-snapshot.h"
 #include "drive.h"
@@ -76,6 +77,7 @@ int c64_snapshot_write(const char *name, int save_roms, int save_disks, int even
     /* the memory hacks must come before C64MEM and the cartridges, reading
        them reinitializes the memory configuration */
     if (maincpu_snapshot_write_module(s) < 0
+        || c64turbo_snapshot_write_module(s) < 0
         || memhacks_snapshot_write_modules(s) < 0
         || c64_snapshot_write_module(s, save_roms) < 0
         || ciacore_snapshot_write_module(machine_context.cia1, s) < 0
@@ -123,6 +125,7 @@ int c64_snapshot_read(const char *name, int event_mode)
     /* the memory hacks must come before C64MEM and the cartridges, reading
        them reinitializes the memory configuration */
     if (maincpu_snapshot_read_module(s) < 0
+        || c64turbo_snapshot_read_module(s) < 0
         || memhacks_snapshot_read_modules(s) < 0
         || c64_snapshot_read_module(s) < 0
         || ciacore_snapshot_read_module(machine_context.cia1, s) < 0

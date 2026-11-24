@@ -2,11 +2,12 @@
 
 This fork (`grue74/vice-gsync`) is upstream VICE (`VICE-Team/svn-mirror`,
 `main`) plus the changes below. Each section says **what** was changed and
-**why**. `main` is kept as upstream `main` with these branches merged in:
+**why**. `main` is kept as upstream `main` with these branches merged in (later
+work, such as the x64 CPU turbo, is committed on `main` directly):
 
 | Branch              | Contents                                                        |
 |---------------------|-----------------------------------------------------------------|
-| `gtk3-smooth-video` | DirectX smooth video, CPU turbo, reSIDfp fix, CMake/MSVC build  |
+| `gtk3-smooth-video` | DirectX smooth video, CPU turbo (x64sc), reSIDfp fix, CMake/MSVC build |
 | `ultimate-uci`      | Ultimate Command Interface (UCI) emulation, netsid warp capture |
 
 To update from upstream: `git fetch upstream && git merge upstream/main`.
@@ -65,35 +66,49 @@ driver delivers frames more evenly than `dx`, so it needs less latency.
 
 ---
 
-## 2. x64sc: Ultimate 64 style CPU turbo
+## 2. x64 and x64sc: Ultimate 64 style CPU turbo
 
-Files: `src/mainc64cpu.c/.h`, `src/c64/c64cpusc.c`,
+Files: `src/c64/c64turbo.c/.h` (shared: settings, registers, IEC slowdown,
+snapshot), `src/c64/c64cpusc.c` + `src/mainc64cpu.c` (x64sc CPU core),
+`src/c64/c64cpu.c` (x64 CPU core), `src/dma.c/.h`, `src/c64/c64.c`,
+`src/c64/c64-snapshot.c`, `src/c64/Makefile.am`,
 `src/arch/gtk3/uisettings.c`, `src/arch/gtk3/widgets/settings_cputurbo.c/.h`,
 `src/arch/gtk3/widgets/Makefile.am`
 
 **Why:** to run software with only the CPU faster, as the Ultimate 64 does,
 while staying as compatible as possible. Warp mode speeds up the whole
 machine, so video, timers and sound speed up with it. This turbo speeds up
-only the 6510.
+only the 6510. It is in both C64 emulators: x64sc for accuracy, x64 for
+testing that doesn't need cycle-exact timing (x64 is about 30 % faster at
+1 MHz; at high turbo speeds the two are about as fast, because most of the
+time then goes into the CPU).
 
 **What:**
 
 - CPU speeds of 1-48 MHz, using the U64 speed table
   (1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40, 48 MHz).
-- Implemented as an integer divisor in the CPU's cycle counter
-  (`CLK_INC` in `c64cpusc.c`): `maincpu_clk` still counts 1 MHz system
-  cycles, so VIC-II, CIA, SID and drives keep their timing. IRQ/NMI delays
-  are counted in CPU cycles.
+- `maincpu_clk` still counts 1 MHz system cycles, so VIC-II, CIA, SID and
+  drives keep their timing. Only the CPU's cycles are divided:
+  - **x64sc:** an integer divisor in the per-cycle `CLK_INC`
+    (`c64cpusc.c`). IRQ/NMI delays are counted in CPU cycles. Cycle exact.
+  - **x64:** the x64 core adds an instruction's cycles in steps (`CLK_ADD`),
+    so `c64cpu.c` accumulates them as CPU cycles and advances the system
+    clock once per `TurboSpeed` of them (the same idea as the C128's 2 MHz
+    mode). `REWIND_FETCH_OPCODE` (ROM traps, JAM) goes through the same
+    accumulator. Not cycle exact: interrupts can be taken a couple of system
+    cycles late.
 - **I/O stays at 1 MHz:** an access to `$D000-$D7FF` or `$DC00-$DFFF` (when
-  mapped in) waits for the next system cycle with BA high and takes a whole
-  system cycle, as on the U64. Colour RAM and cartridge ROM run at full speed.
-- **Registers** (handled in the CPU's I/O path rather than in `viciisc`,
-  because `viciisc` is shared with xscpu64):
+  mapped in) waits for the next system cycle (x64sc: with BA high) and takes
+  a whole system cycle, as on the U64. Colour RAM and cartridge ROM run at
+  full speed.
+- **Registers** (handled in the CPU's I/O path rather than in the VIC-II
+  code, which is shared with xscpu64 and x128):
   - `$D031` speed index (bits 0-3), bit 7 = badlines off
   - `$D030` bit 0 = turbo on (enable-bit mode; reads back `$FE | on`)
   - `$D07A` / `$D07B` = normal speed / turbo (SuperCPU compatible)
-- **Badlines off** option: the CPU keeps running while BA is low (about 7 %
-  faster).
+- **Badlines off** option: the CPU keeps running while the VIC-II fetches
+  (about 7 % faster). x64sc ignores BA; x64 skips the VIC-II's cycle
+  stealing (`dma_maincpu_steal_disabled` in `dma.c`).
 - **IEC slowdown** (a VICE-only heuristic, on by default): any `$DD00/$DD01`
   access drops the CPU to 1 MHz for 1000 cycles. Without it, KERNAL and
   JiffyDOS loads hang at high speeds, because their timing loops are
@@ -101,8 +116,8 @@ only the 6510.
 - Snapshot module `C64TURBO` (optional when reading, so older snapshots
   still load).
 
-**Settings:** Settings > Machine > CPU turbo (x64sc, GTK3 only; no SDL menu).
-Resources and options:
+**Settings:** Settings > Machine > CPU turbo (x64 and x64sc, GTK3 only; no
+SDL menu). Resources and options:
 
 | Resource           | Option                                   | Meaning                                            |
 |--------------------|------------------------------------------|----------------------------------------------------|
@@ -111,9 +126,22 @@ Resources and options:
 | `TurboBadlines`    | `-turbobadlines` / `+turbobadlines`      | keep badline timing (default on)                   |
 | `TurboIECSlowdown` | `-turboiecslowdown` / `+turboiecslowdown`| 1 MHz after IEC access (default on)                |
 
-Measured (BASIC loop, iterations per time unit): 1 MHz 110, 4 MHz 447,
-20 MHz ~2300, 48 MHz 5526 (about 50x; IRQ overhead shrinks at higher speeds).
-KERNAL and JiffyDOS loads work at 48 MHz with the IEC slowdown on.
+Note: x64 isn't built by default; configure with `--enable-x64`.
+
+Measured with a BASIC loop that counts iterations for 60 jiffies (the
+results vary by about 1 % from run to run):
+
+| Speed               | x64sc  | x64   |
+|---------------------|--------|-------|
+| off                 | 110-111 | 110-111 |
+| 4 MHz               | 447    | 448   |
+| 20 MHz (registers)  | 2304-2341 | 2319 |
+| 48 MHz              | 5508-5594 | 5577 |
+| 48 MHz, badlines off| 5886   | 5893  |
+
+KERNAL (true drive), JiffyDOS and virtual-device (trap) loads work at
+48 MHz with the IEC slowdown on in both emulators. Without it they fail
+(a hang or ?DEVICE NOT PRESENT).
 Not tested yet: other fastloaders and tape turbos. The read-back values of
 the upper bits of `$D030` and of bits 4-6 of `$D031` are guesses.
 

@@ -1,12 +1,12 @@
 /** \file   settings_cputurbo.c
- * \brief   Settings widget for the x64sc CPU turbo (Ultimate 64 style)
+ * \brief   Settings widget for the x64/x64sc CPU turbo (Ultimate 64 style)
  */
 
 /*
- * $VICERES TurboMode           x64sc
- * $VICERES TurboSpeed          x64sc
- * $VICERES TurboBadlines       x64sc
- * $VICERES TurboIECSlowdown    x64sc
+ * $VICERES TurboMode           x64 x64sc
+ * $VICERES TurboSpeed          x64 x64sc
+ * $VICERES TurboBadlines       x64 x64sc
+ * $VICERES TurboIECSlowdown    x64 x64sc
  */
 
 /*

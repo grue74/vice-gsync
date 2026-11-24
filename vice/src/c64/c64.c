@@ -54,6 +54,7 @@
 #include "c64memrom.h"
 #include "c64parallel.h"
 #include "c64rsuser.h"
+#include "c64turbo.h"
 #include "cardkey.h"
 #include "cartio.h"
 #include "cartridge.h"
@@ -774,6 +775,10 @@ int machine_resources_init(void)
         init_resource_fail("c64");
         return -1;
     }
+    if (c64turbo_resources_init() < 0) {
+        init_resource_fail("c64turbo");
+        return -1;
+    }
     if (export_resources_init() < 0) {
         init_resource_fail("c64export");
         return -1;
@@ -947,6 +952,10 @@ int machine_cmdline_options_init(void)
     }
     if (c64_cmdline_options_init() < 0) {
         init_cmdline_options_fail("c64");
+        return -1;
+    }
+    if (c64turbo_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("c64turbo");
         return -1;
     }
     if (memory_hacks_cmdline_options_init() < 0) {

@@ -32,14 +32,4 @@
 #define MAINCPU_BA_LOW_REU   2
 extern int maincpu_ba_low_flags;
 
-/* CPU turbo (Ultimate 64 style), "TurboMode" resource values */
-#define MAINCPU_TURBO_MODE_OFF          0   /**< always 1 MHz */
-#define MAINCPU_TURBO_MODE_MANUAL       1   /**< settings from the resources, no registers */
-#define MAINCPU_TURBO_MODE_REGISTERS    2   /**< like manual, $D031 (and $D07A/$D07B) change them */
-#define MAINCPU_TURBO_MODE_ENABLE_BIT   3   /**< like registers, and $D030 bit 0 switches turbo on/off */
-
-/* CPU cycles per system (1 MHz) cycle, and those done in the current one */
-extern int maincpu_turbo_div;
-extern int maincpu_turbo_cycle;
-
 #endif

@@ -142,6 +142,8 @@ libc64_a_SOURCES = \
 	c64rsuser.c \
 	c64rsuser.h \
 	c64sound.c \
+	c64turbo.c \
+	c64turbo.h \
 	c64video.c \
 	plus256k.c \
 	plus256k.h \
@@ -205,6 +207,8 @@ libc64sc_a_SOURCES = \
 	c64rsuser.c \
 	c64rsuser.h \
 	c64sound.c \
+	c64turbo.c \
+	c64turbo.h \
 	c64video.c \
 	plus256k.c \
 	plus256k.h \

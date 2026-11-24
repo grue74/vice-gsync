@@ -34,6 +34,8 @@
 #include "types.h"
 
 
+int dma_maincpu_steal_disabled = 0;
+
 /* Asynchronously steal `num' cycles from the CPU, starting from cycle
    `start_clk'.  */
 void dma_maincpu_steal_cycles(CLOCK start_clk, CLOCK num, CLOCK sub)
@@ -44,7 +46,7 @@ void dma_maincpu_steal_cycles(CLOCK start_clk, CLOCK num, CLOCK sub)
     interrupt_cpu_status_t *cs = maincpu_int_status;
     CLOCK dma_start;
 
-    if (num == 0) {
+    if (num == 0 || dma_maincpu_steal_disabled) {
         return;
     }
 

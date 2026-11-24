@@ -932,32 +932,6 @@ static ui_settings_tree_node_t machine_nodes_c64[] = {
     { "RAM",
       "ram",
       settings_ramreset_widget_create, NULL },
-    { "Memory Expansion Hacks",
-      "mem-hacks",
-      settings_c64_memhacks_widget_create, NULL },
-    { "I/O settings",
-      "io",
-      settings_io_widget_create, NULL },
-    { "Burst Mode Modification",
-      "burst-mode",
-      settings_burstmode_widget_create, NULL },
-    UI_SETTINGS_TERMINATOR
-};
-/* }}} */
-
-/* {{{ machine_nodes_c64sc */
-/** \brief  Child nodes for the x64sc 'Machine' node (C64 nodes plus the CPU turbo)
- */
-static ui_settings_tree_node_t machine_nodes_c64sc[] = {
-    { "Model",
-      "model",
-      settings_model_widget_create, NULL },
-    { "ROM",
-      "rom",
-      settings_rom_widget_create, NULL },
-    { "RAM",
-      "ram",
-      settings_ramreset_widget_create, NULL },
     { "CPU turbo",
       "cpu-turbo",
       settings_cputurbo_widget_create, NULL },
@@ -1071,21 +1045,6 @@ static ui_settings_tree_node_t peripheral_nodes_c64[] = {
 static ui_settings_tree_node_t main_nodes_c64[] = {
     { "Host",               "host",         NULL,   host_nodes_generic },
     { "Machine",            "machine",      NULL,   machine_nodes_c64 },
-    { "Display",            "display",      NULL,   display_nodes_c64 },
-    { "Audio",              "audio",        NULL,   audio_nodes_c64 },
-    { "Input devices",      "input",        NULL,   input_nodes_c64 },
-    { "Peripheral devices", "peripheral",   NULL,   peripheral_nodes_c64 },
-    { "Cartridges",         "cartridges",   NULL,   c64_cartridges },
-    UI_SETTINGS_TERMINATOR
-};
-/* }}} */
-
-/* {{{ main_nodes_c64sc */
-/** \brief  Main tree nodes for x64sc
- */
-static ui_settings_tree_node_t main_nodes_c64sc[] = {
-    { "Host",               "host",         NULL,   host_nodes_generic },
-    { "Machine",            "machine",      NULL,   machine_nodes_c64sc },
     { "Display",            "display",      NULL,   display_nodes_c64 },
     { "Audio",              "audio",        NULL,   audio_nodes_c64 },
     { "Input devices",      "input",        NULL,   input_nodes_c64 },
@@ -2369,11 +2328,9 @@ static GtkTreeStore *populate_tree_model(void)
     model = settings_model;
 
     switch (machine_class) {
-        case VICE_MACHINE_C64:
-            nodes = main_nodes_c64;
-            break;
+        case VICE_MACHINE_C64:  /* fall through */
         case VICE_MACHINE_C64SC:
-            nodes = main_nodes_c64sc;
+            nodes = main_nodes_c64;
             break;
         case VICE_MACHINE_C64DTV:
             nodes = main_nodes_c64dtv;
