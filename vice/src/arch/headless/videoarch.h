@@ -65,6 +65,7 @@ typedef struct video_canvas_s {
 } video_canvas_t;
 
 typedef struct vice_renderer_backend_s {
+    int unused; /* empty structs are a GCC extension (MSVC rejects them) */
 } vice_renderer_backend_t;
 
 #endif

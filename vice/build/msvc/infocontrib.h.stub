@@ -1,0 +1,32 @@
+/*
+ * infocontrib.h - stub used by the MSVC build when the generator script
+ * (src/buildtools/geninfocontrib_h.sh) could not be run.
+ *
+ * This file is part of VICE, the Versatile Commodore Emulator.
+ * See README for copyright notice.
+ */
+
+#ifndef VICE_INFOCONTRIB_H
+#define VICE_INFOCONTRIB_H
+
+const char info_contrib_text[] =
+"See doc/vice.texi or https://vice-emu.sourceforge.io/ for the list of contributors.\n";
+
+vice_team_t core_team[] = {
+    { "1993-2026", "The VICE Team", "" },
+    { NULL, NULL, NULL }
+};
+
+vice_team_t ex_team[] = {
+    { NULL, NULL, NULL }
+};
+
+char *doc_team[] = {
+    NULL
+};
+
+vice_trans_t trans_team[] = {
+    { NULL, NULL, NULL, NULL }
+};
+
+#endif
