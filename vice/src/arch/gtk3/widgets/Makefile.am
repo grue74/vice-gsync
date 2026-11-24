@@ -111,6 +111,7 @@ libwidgets_a_SOURCES = \
 	settings_autofire.c \
 	settings_autostart.c \
 	settings_burstmode.c \
+	settings_cputurbo.c \
 	settings_c128fullbanks.c \
 	settings_c128functionrom.c \
 	settings_c64dtvflash.c \
@@ -289,6 +290,7 @@ EXTRA_DIST = \
 	settings_autofire.h \
 	settings_autostart.h \
 	settings_burstmode.h \
+	settings_cputurbo.h \
 	settings_c128fullbanks.h \
 	settings_c128functionrom.h \
 	settings_c64dtvflash.h \
