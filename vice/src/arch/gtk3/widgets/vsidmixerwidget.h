@@ -34,4 +34,7 @@
 GtkWidget *vsid_mixer_widget_create(void);
 void       vsid_mixer_widget_update(void);
 
+/* Set the function the panel's "Export tune..." button calls (VSID only) */
+void       vsid_mixer_widget_set_export_handler(void (*handler)(void));
+
 #endif

@@ -45,6 +45,9 @@
  * $VICERES SidResid6581OldCaps         all
  * $VICERES SidResid8580FilterCurve     all
  * $VICERES SidResidCombinedWaveformStrength     all
+ * $VICERES SidResidFilterC1            all
+ * $VICERES SidResidFilterC2            all
+ * $VICERES SidResid6581DacRatio        all
  *
  * These are related to USBSID
  * $VICERES SidUSBSIDReadMode           all
@@ -87,6 +90,7 @@
 #include "vsidmixerwidget.h"
 #include "vice_gtk3.h"
 
+#include "sidfilterpresets.h"
 #include "sidsoundwidget.h"
 
 
@@ -110,8 +114,8 @@ typedef struct slider_s {
     const char *label;      /**< label text */
     const char *resource;   /**< resource name */
     const char *format;     /**< format string for Gtk.Scale::draw_value */
-    int         min;        /**< scale minimum value */
-    int         max;        /**< scale maximum value */
+    double      min;        /**< scale minimum value */
+    double      max;        /**< scale maximum value */
     int         resmin;     /**< resource minimum value */
     int         resmax;     /**< resource maximum value */
     float       step;       /**< scale stepping */
@@ -179,6 +183,10 @@ static const slider_t fp_sliders_6581[] = {
       RESIDFP_6581_FILTER_RANGE_MIN / RESIDFP_6581_FILTER_RANGE_ONE,
       RESIDFP_6581_FILTER_RANGE_MAX / RESIDFP_6581_FILTER_RANGE_ONE,
       RESIDFP_6581_FILTER_RANGE_MIN, RESIDFP_6581_FILTER_RANGE_MAX, 0.01f },
+    { "6581 DAC kink (2R/R)", "SidResid6581DacRatio",        "%1.3f",
+      (double)RESIDFP_6581_DAC_RATIO_MIN / RESIDFP_6581_DAC_RATIO_ONE,
+      (double)RESIDFP_6581_DAC_RATIO_MAX / RESIDFP_6581_DAC_RATIO_ONE,
+      RESIDFP_6581_DAC_RATIO_MIN, RESIDFP_6581_DAC_RATIO_MAX, 0.005f },
     { NULL,            NULL,                     NULL,          0,    0, 0,    0, 0 }
 };
 
@@ -301,6 +309,18 @@ static GtkWidget *residfp_8580_grid;
 /** \brief  ReSIDfp sliders for both models */
 static GtkWidget *residfp_common_grid;
 
+/** \brief  ReSIDfp filter capacitors C1/C2 block */
+static GtkWidget *residfp_caps_grid;
+
+/** \brief  Sliders of C1 and C2 (resource-bound) */
+static GtkWidget *residfp_caps_scale[2];
+
+/** \brief  Spin buttons of C1 and C2 (exact values, kept in step with the sliders) */
+static GtkWidget *residfp_caps_spin[2];
+
+/** \brief  value-changed handlers of the spin buttons (blocked while syncing) */
+static gulong residfp_caps_spin_handler[2];
+
 /** \brief  ReSIDfp 6581 chip profile drop down box */
 static GtkWidget *chip_profile;
 
@@ -422,6 +442,7 @@ static void update_filter_widgets(void)
         gtk_widget_set_visible(residfp_6581_grid, engine == SID_ENGINE_RESIDFP && has_6581);
         gtk_widget_set_visible(residfp_8580_grid, engine == SID_ENGINE_RESIDFP && has_8580);
         gtk_widget_set_visible(residfp_common_grid, engine == SID_ENGINE_RESIDFP);
+        gtk_widget_set_visible(residfp_caps_grid, engine == SID_ENGINE_RESIDFP);
         /* the profile and the capacitors are about the 6581 */
         gtk_widget_set_visible(chip_profile, engine == SID_ENGINE_RESIDFP && has_6581);
         gtk_widget_set_visible(chip_profile_label, engine == SID_ENGINE_RESIDFP && has_6581);
@@ -521,6 +542,7 @@ static void engine_model_changed_callback(int engine, int model)
     gtk_widget_set_sensitive(residfp_6581_grid, is_residfp);
     gtk_widget_set_sensitive(residfp_8580_grid, is_residfp);
     gtk_widget_set_sensitive(residfp_common_grid, is_residfp);
+    gtk_widget_set_sensitive(residfp_caps_grid, is_residfp);
     gtk_widget_set_sensitive(chip_profile, is_residfp);
 #endif
 
@@ -800,6 +822,18 @@ static GtkWidget *create_reset_button(GtkWidget *slider)
 /** \brief  Labels of all slider blocks, one width for all */
 static GtkSizeGroup *slider_label_group = NULL;
 
+/** \brief  All resource sliders on the page (to show a loaded preset) */
+#define MAX_PAGE_SCALES 32
+static GtkWidget *page_scales[MAX_PAGE_SCALES];
+static int page_scale_count = 0;
+
+static void remember_scale(GtkWidget *scale)
+{
+    if (page_scale_count < MAX_PAGE_SCALES) {
+        page_scales[page_scale_count++] = scale;
+    }
+}
+
 static GtkWidget *create_sliders(const slider_t *slider_decls,
                                  const char     *title)
 {
@@ -848,6 +882,7 @@ static GtkWidget *create_sliders(const slider_t *slider_decls,
                                                         decl->format,
                                                         decl->resource);
         button = create_reset_button(scale);
+        remember_scale(scale);
 
         /* needed since we use no-show-all */
         gtk_widget_show(label);
@@ -865,6 +900,261 @@ static GtkWidget *create_sliders(const slider_t *slider_decls,
 
     g_object_unref(provider);
 
+    return grid;
+}
+#endif
+
+#ifdef HAVE_RESIDFP
+/*
+ * Filter capacitors C1 (CAP1A/B, lowpass integrator) and C2 (CAP2A/B, bandpass
+ * integrator). Commodore fitted 10 % ceramics, so a real board rarely has a
+ * matched pair: C1*C2 moves the cutoff, C2/C1 sets the resonance. The values
+ * are applied while the SID plays (no re-init).
+ */
+
+/** \brief  Show the resource value of cap \a i in its spin button */
+static void residfp_caps_sync_spin(int i)
+{
+    int value = 0;
+
+    resources_get_int(i == 0 ? "SidResidFilterC1" : "SidResidFilterC2", &value);
+    g_signal_handler_block(residfp_caps_spin[i], residfp_caps_spin_handler[i]);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(residfp_caps_spin[i]),
+                              (double)value / RESIDFP_FILTER_CAP_ONE);
+    g_signal_handler_unblock(residfp_caps_spin[i], residfp_caps_spin_handler[i]);
+}
+
+/** \brief  Set cap \a i (resource value, 0.1 %) and update its widgets */
+static void residfp_caps_set(int i, int value)
+{
+    vice_gtk3_resource_scale_custom_set(residfp_caps_scale[i], value);
+    residfp_caps_sync_spin(i);
+}
+
+/** \brief  The slider of a cap moved: show its value in the spin button */
+static void on_residfp_caps_scale_changed(GtkWidget *scale, gpointer data)
+{
+    residfp_caps_sync_spin(GPOINTER_TO_INT(data));
+}
+
+/** \brief  A value was typed into the spin button of a cap */
+static void on_residfp_caps_spin_changed(GtkWidget *spin, gpointer data)
+{
+    int i = GPOINTER_TO_INT(data);
+    double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
+
+    vice_gtk3_resource_scale_custom_set(residfp_caps_scale[i],
+                                        (int)lround(value * RESIDFP_FILTER_CAP_ONE));
+}
+
+/** \brief  Reset button of a cap: back to the nominal value */
+static void on_residfp_caps_reset(GtkWidget *button, gpointer data)
+{
+    residfp_caps_set(GPOINTER_TO_INT(data), RESIDFP_FILTER_CAP_DEFAULT);
+}
+
+/** \brief  One random 10 % part: normal distribution with the tolerance at 2
+ *          sigma, parts outside the tolerance rejected (as in production)
+ *
+ * \return  deviation in 0.1 %
+ */
+static int residfp_caps_random_part(void)
+{
+    const double tolerance = 10.0;  /* % */
+    const double sigma = tolerance / 2.0;
+    double z;
+
+    do {
+        double u = g_random_double();
+        double v = g_random_double();
+        if (u < 1e-12) {
+            u = 1e-12;
+        }
+        z = sqrt(-2.0 * log(u)) * cos(2.0 * G_PI * v) * sigma;
+    } while (fabs(z) > tolerance);
+
+    return (int)lround(z * RESIDFP_FILTER_CAP_ONE);
+}
+
+/** \brief  Preset buttons: 0 random board, 1 most resonance, 2 least
+ *          resonance, 3 matched pair
+ */
+static void on_residfp_caps_preset(GtkWidget *button, gpointer data)
+{
+    int c1 = 0;
+    int c2 = 0;
+
+    switch (GPOINTER_TO_INT(data)) {
+        case 0:
+            c1 = residfp_caps_random_part();
+            c2 = residfp_caps_random_part();
+            break;
+        case 1:     /* C1 low, C2 high: Q x 1.105 with 10 % parts */
+            c1 = -100;
+            c2 = 100;
+            break;
+        case 2:     /* C1 high, C2 low: Q x 0.905 */
+            c1 = 100;
+            c2 = -100;
+            break;
+        default:
+            break;
+    }
+    residfp_caps_set(0, c1);
+    residfp_caps_set(1, c2);
+}
+
+/** \brief  Create the filter capacitor block
+ *
+ * \return  GtkGrid
+ */
+static GtkWidget *create_residfp_caps_widget(void)
+{
+    static const char *labels[2] = {
+        "C1 (CAP1, lowpass)",
+        "C2 (CAP2, bandpass)"
+    };
+    static const char *resources[2] = { "SidResidFilterC1", "SidResidFilterC2" };
+    static const char *presets[4] = {
+        "Random board", "Most resonance", "Least resonance", "Matched pair"
+    };
+    GtkWidget      *grid;
+    GtkWidget      *label;
+    GtkWidget      *box;
+    GtkCssProvider *provider;
+    int             row = 0;
+    int             i;
+
+    provider = vice_gtk3_css_provider_new(SCALE_CSS);
+
+    grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 16);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+    gtk_widget_set_margin_top(grid, 8);
+
+    label = label_helper("<b>ReSIDfp filter capacitors C1/C2</b>");
+    gtk_grid_attach(GTK_GRID(grid), label, 0, row++, 4, 1);
+
+    label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label),
+            "<small>Deviation from the nominal value (470 pF on 6581, 22 nF on 8580 boards;"
+            " Commodore used 10 % parts). C1Ã" "C2 moves the cutoff, C2/C1 the resonance."
+            " Applies while playing.</small>");
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+    gtk_widget_set_margin_bottom(label, 4);
+    gtk_grid_attach(GTK_GRID(grid), label, 0, row++, 4, 1);
+
+    for (i = 0; i < 2; i++) {
+        GtkWidget *button;
+
+        label = label_helper(labels[i]);
+        gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+        if (slider_label_group == NULL) {
+            slider_label_group = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
+        }
+        gtk_size_group_add_widget(slider_label_group, label);
+
+        residfp_caps_scale[i] = vice_gtk3_resource_scale_custom_new_printf("%s",
+                GTK_ORIENTATION_HORIZONTAL,
+                RESIDFP_FILTER_CAP_MIN, RESIDFP_FILTER_CAP_MAX,
+                (double)RESIDFP_FILTER_CAP_MIN / RESIDFP_FILTER_CAP_ONE,
+                (double)RESIDFP_FILTER_CAP_MAX / RESIDFP_FILTER_CAP_ONE,
+                0.1, "%+5.1f%%", resources[i]);
+        gtk_widget_set_hexpand(residfp_caps_scale[i], TRUE);
+        remember_scale(residfp_caps_scale[i]);
+        gtk_scale_set_draw_value(GTK_SCALE(residfp_caps_scale[i]), FALSE);
+        gtk_scale_add_mark(GTK_SCALE(residfp_caps_scale[i]), -10.0, GTK_POS_BOTTOM, NULL);
+        gtk_scale_add_mark(GTK_SCALE(residfp_caps_scale[i]), 0.0, GTK_POS_BOTTOM, NULL);
+        gtk_scale_add_mark(GTK_SCALE(residfp_caps_scale[i]), 10.0, GTK_POS_BOTTOM, NULL);
+        if (provider != NULL) {
+            vice_gtk3_css_provider_add(residfp_caps_scale[i], provider);
+        }
+
+        residfp_caps_spin[i] = gtk_spin_button_new_with_range(
+                (double)RESIDFP_FILTER_CAP_MIN / RESIDFP_FILTER_CAP_ONE,
+                (double)RESIDFP_FILTER_CAP_MAX / RESIDFP_FILTER_CAP_ONE,
+                0.1);
+        gtk_spin_button_set_digits(GTK_SPIN_BUTTON(residfp_caps_spin[i]), 1);
+        gtk_widget_set_tooltip_text(residfp_caps_spin[i], "Deviation in %");
+        residfp_caps_spin_handler[i] = g_signal_connect(residfp_caps_spin[i], "value-changed",
+                G_CALLBACK(on_residfp_caps_spin_changed), GINT_TO_POINTER(i));
+        g_signal_connect(residfp_caps_scale[i], "value-changed",
+                G_CALLBACK(on_residfp_caps_scale_changed), GINT_TO_POINTER(i));
+        residfp_caps_sync_spin(i);
+
+        button = gtk_button_new_from_icon_name("edit-undo-symbolic", GTK_ICON_SIZE_BUTTON);
+        gtk_widget_set_tooltip_text(button, "Nominal value");
+        gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
+        g_signal_connect(button, "clicked", G_CALLBACK(on_residfp_caps_reset), GINT_TO_POINTER(i));
+
+        gtk_grid_attach(GTK_GRID(grid), label,                 0, row, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), residfp_caps_scale[i], 1, row, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), residfp_caps_spin[i],  2, row, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), button,                3, row, 1, 1);
+        row++;
+    }
+
+    box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_top(box, 4);
+    for (i = 0; i < 4; i++) {
+        GtkWidget *button = gtk_button_new_with_label(presets[i]);
+        g_signal_connect(button, "clicked", G_CALLBACK(on_residfp_caps_preset), GINT_TO_POINTER(i));
+        gtk_box_pack_start(GTK_BOX(box), button, FALSE, FALSE, 0);
+    }
+    gtk_grid_attach(GTK_GRID(grid), box, 0, row++, 4, 1);
+
+    if (provider != NULL) {
+        g_object_unref(provider);
+    }
+    gtk_widget_show_all(grid);
+    return grid;
+}
+#endif
+
+#if defined(HAVE_RESID) || defined(HAVE_RESIDFP)
+/** \brief  A saved filter setting was loaded: show its values on the page */
+static void on_preset_loaded(void)
+{
+    int i;
+
+    for (i = 0; i < page_scale_count; i++) {
+        vice_gtk3_resource_scale_custom_sync(page_scales[i]);
+    }
+#ifdef HAVE_RESIDFP
+    if (residfp_caps_spin[0] != NULL) {
+        residfp_caps_sync_spin(0);
+        residfp_caps_sync_spin(1);
+    }
+    if (residfp_oldcaps != NULL) {
+        vice_gtk3_resource_check_button_sync(residfp_oldcaps);
+    }
+#endif
+    if (sid_filters != NULL) {
+        vice_gtk3_resource_check_button_sync(sid_filters);
+    }
+}
+
+/** \brief  Create the "My filter settings" block (shared with VSID) */
+static GtkWidget *create_presets_block(void)
+{
+    GtkWidget *grid = gtk_grid_new();
+    GtkWidget *label;
+
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 16);
+    gtk_widget_set_margin_top(grid, 16);
+    label = label_helper("<b>My filter settings</b>");
+    gtk_grid_attach(GTK_GRID(grid), label, 0, 0, 2, 1);
+    label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label),
+            "<small>Saves every filter value of reSID and reSIDfp (not the engine or"
+            " model) under a name. The same list is on the VSID player.</small>");
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+    gtk_widget_set_margin_bottom(label, 4);
+    gtk_grid_attach(GTK_GRID(grid), label, 0, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), sid_filter_presets_widget_create(on_preset_loaded), 0, 2, 2, 1);
+    gtk_widget_show_all(grid);
     return grid;
 }
 #endif
@@ -1096,6 +1386,11 @@ GtkWidget *sid_sound_widget_create(void)
     int        current_engine = 0;
     int        current_stereo = 0;
 
+#if defined(HAVE_RESID) || defined(HAVE_RESIDFP)
+    /* the sliders of a previous instance of the page are gone */
+    page_scale_count = 0;
+#endif
+
     resources_get_int("SidEngine", &current_engine);
     resources_get_int("SidStereo", &current_stereo);
 
@@ -1213,6 +1508,16 @@ GtkWidget *sid_sound_widget_create(void)
     gtk_grid_attach(GTK_GRID(grid), residfp_8580_grid, 0, row + 3, 3, 1);
     gtk_grid_attach(GTK_GRID(grid), residfp_common_grid, 0, row + 4, 3, 1);
     gtk_widget_set_no_show_all(residfp_common_grid, TRUE);
+    residfp_caps_grid = create_residfp_caps_widget();
+    gtk_grid_attach(GTK_GRID(grid), residfp_caps_grid, 0, row + 5, 3, 1);
+    gtk_widget_set_no_show_all(residfp_caps_grid, TRUE);
+    gtk_widget_set_sensitive(residfp_caps_grid, current_engine == SID_ENGINE_RESIDFP);
+#endif
+
+#if defined(HAVE_RESID) || defined(HAVE_RESIDFP)
+    gtk_grid_attach(GTK_GRID(grid), create_presets_block(), 0, row + 6, 3, 1);
+#endif
+#ifdef HAVE_RESIDFP
 
     /* only enable appropriate widgets */
     gtk_widget_set_no_show_all(residfp_6581_grid, TRUE);
@@ -1239,9 +1544,9 @@ GtkWidget *sid_sound_widget_create(void)
     us_diffsizes = create_us_diffsizes_widget();
     us_buffsizes = create_us_buffsizes_widget();
 
-    gtk_grid_attach(GTK_GRID(grid), us_switches, 0, row + 5, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), us_diffsizes, 1, row + 5, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), us_buffsizes, 2, row + 5, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), us_switches, 0, row + 7, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), us_diffsizes, 1, row + 7, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), us_buffsizes, 2, row + 7, 1, 1);
 
     gtk_widget_set_sensitive(us_switches, current_engine == SID_ENGINE_USBSID);
     gtk_widget_set_sensitive(us_diffsizes, current_engine == SID_ENGINE_USBSID);

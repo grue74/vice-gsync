@@ -17,6 +17,9 @@
  * $VICERES SidResid6581FilterRange -vsid
  * $VICERES SidResid8580FilterCurve -vsid
  * $VICERES SidResidCombinedWaveformStrength -vsid
+ * $VICERES SidResidFilterC1        -vsid
+ * $VICERES SidResidFilterC2        -vsid
+ * $VICERES SidResid6581DacRatio    -vsid
  */
 
 /*
@@ -149,6 +152,10 @@ static GtkWidget *range6581;
 /** \brief  ReSIDfp 6581 filter curve slider */
 static GtkWidget *curve6581;
 
+/** \brief  ReSIDfp 6581 cutoff DAC 2R/R ratio ("kink") slider and label */
+static GtkWidget *dac6581;
+static GtkWidget *dac6581label;
+
 /** \brief  ReSIDfp 8580 filter curve slider */
 static GtkWidget *curve8580;
 
@@ -166,6 +173,14 @@ static GtkWidget *curve8580label;
 
 /** \brief  ReSIDfp combined waveform strength label */
 static GtkWidget *combinedstrengthlabel;
+
+/** \brief  ReSIDfp filter capacitor C1 / C2 deviation sliders */
+static GtkWidget *capc1;
+static GtkWidget *capc2;
+
+/** \brief  ReSIDfp filter capacitor C1 / C2 labels */
+static GtkWidget *capc1label;
+static GtkWidget *capc2label;
 
 #endif
 
@@ -224,10 +239,16 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_hide(curve6581);
         gtk_widget_hide(range6581label);
         gtk_widget_hide(range6581);
+        gtk_widget_hide(dac6581label);
+        gtk_widget_hide(dac6581);
         gtk_widget_hide(curve8580label);
         gtk_widget_hide(curve8580);
         gtk_widget_hide(combinedstrengthlabel);
         gtk_widget_hide(combinedstrength);
+        gtk_widget_hide(capc1label);
+        gtk_widget_hide(capc1);
+        gtk_widget_hide(capc2label);
+        gtk_widget_hide(capc2);
     }
 #endif
 
@@ -237,14 +258,28 @@ void mixer_widget_sid_type_changed(void)
             (model == SID_MODEL_8580D)) {
             gtk_widget_show(curve8580label);
             gtk_widget_show(curve8580);
+            gtk_widget_hide(curve6581label);
+            gtk_widget_hide(curve6581);
+            gtk_widget_hide(range6581label);
+            gtk_widget_hide(range6581);
+            gtk_widget_hide(dac6581label);
+            gtk_widget_hide(dac6581);
         } else {
             gtk_widget_show(curve6581label);
             gtk_widget_show(curve6581);
             gtk_widget_show(range6581label);
             gtk_widget_show(range6581);
+            gtk_widget_show(dac6581label);
+            gtk_widget_show(dac6581);
+            gtk_widget_hide(curve8580label);
+            gtk_widget_hide(curve8580);
         }
         gtk_widget_show(combinedstrengthlabel);
         gtk_widget_show(combinedstrength);
+        gtk_widget_show(capc1label);
+        gtk_widget_show(capc1);
+        gtk_widget_show(capc2label);
+        gtk_widget_show(capc2);
 #endif
     } else if (engine == SID_ENGINE_RESID) {
 #ifdef HAVE_RESID
@@ -280,6 +315,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve8580, FALSE);
         gtk_widget_set_sensitive(curve6581, FALSE);
         gtk_widget_set_sensitive(range6581, FALSE);
+        gtk_widget_set_sensitive(dac6581, FALSE);
+        gtk_widget_set_sensitive(capc1, FALSE);
+        gtk_widget_set_sensitive(capc2, FALSE);
 #endif
     }
 
@@ -297,6 +335,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve8580, FALSE);
         gtk_widget_set_sensitive(curve6581, FALSE);
         gtk_widget_set_sensitive(range6581, FALSE);
+        gtk_widget_set_sensitive(dac6581, FALSE);
+        gtk_widget_set_sensitive(capc1, FALSE);
+        gtk_widget_set_sensitive(capc2, FALSE);
 #endif
     }
 
@@ -313,6 +354,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve8580, TRUE);
         gtk_widget_set_sensitive(curve6581, TRUE);
         gtk_widget_set_sensitive(range6581, TRUE);
+        gtk_widget_set_sensitive(dac6581, TRUE);
+        gtk_widget_set_sensitive(capc1, TRUE);
+        gtk_widget_set_sensitive(capc2, TRUE);
 #endif
     }
 # undef FILTER_8580
@@ -364,6 +408,11 @@ static void on_reset_clicked(GtkWidget *widget, gpointer data)
     } else if (model == SID_MODEL_6581) {
         vice_gtk3_resource_scale_custom_factory(curve6581);
         vice_gtk3_resource_scale_custom_factory(range6581);
+        vice_gtk3_resource_scale_custom_factory(dac6581);
+    }
+    if (engine == SID_ENGINE_RESIDFP) {
+        vice_gtk3_resource_scale_custom_factory(capc1);
+        vice_gtk3_resource_scale_custom_factory(capc2);
     }
 #endif
 }
@@ -408,7 +457,7 @@ static GtkWidget *create_label(const char *text,
 static GtkWidget *create_slider(
         const char *resource,
         const char *resfmt,
-        int low, int high,
+        double low, double high,
         int reslow, int reshigh, float step,
         gboolean minimal)
 {
@@ -660,6 +709,29 @@ static GtkWidget *create_combined_waveform_strength_widget(gboolean minimal)
                          RESIDFP_COMBINED_WAVEFORM_STRENGTH_MAX / RESIDFP_COMBINED_WAVEFORM_STRENGTH_ONE,
                          RESIDFP_COMBINED_WAVEFORM_STRENGTH_MIN, RESIDFP_COMBINED_WAVEFORM_STRENGTH_MAX, 1.0f, minimal);
 }
+
+/** \brief  Create slider for a reSIDfp filter capacitor (C1 or C2)
+ *
+ * Deviation from the nominal value in percent, applied while playing.
+ *
+ * \param[in]   resource    "SidResidFilterC1" or "SidResidFilterC2"
+ * \param[in]   minimal     resize slider to minimal size
+ *
+ * \return  GtkScale
+ */
+static GtkWidget *create_filter_cap_widget(const char *resource, gboolean minimal)
+{
+    GtkWidget *scale;
+
+    scale = create_slider(resource, "%+5.1f%%",
+                          RESIDFP_FILTER_CAP_MIN / RESIDFP_FILTER_CAP_ONE,
+                          RESIDFP_FILTER_CAP_MAX / RESIDFP_FILTER_CAP_ONE,
+                          RESIDFP_FILTER_CAP_MIN, RESIDFP_FILTER_CAP_MAX, 0.1f, minimal);
+    gtk_scale_add_mark(GTK_SCALE(scale), -10.0, GTK_POS_BOTTOM, NULL);
+    gtk_scale_add_mark(GTK_SCALE(scale),   0.0, GTK_POS_BOTTOM, NULL);
+    gtk_scale_add_mark(GTK_SCALE(scale),  10.0, GTK_POS_BOTTOM, NULL);
+    return scale;
+}
 #endif  /* ifdef HAVE_RESIDFP */
 
 
@@ -834,6 +906,20 @@ GtkWidget *mixer_widget_create(gboolean minimal, GtkAlign alignment)
     gtk_grid_attach(GTK_GRID(grid), range6581, 1, row, 1, 1);
     row++;
 
+    dac6581label = create_label("ReSIDfp 6581 DAC kink (2R/R)", minimal, alignment);
+    dac6581 = create_slider("SidResid6581DacRatio", "%1.3f",
+                            (double)RESIDFP_6581_DAC_RATIO_MIN / RESIDFP_6581_DAC_RATIO_ONE,
+                            (double)RESIDFP_6581_DAC_RATIO_MAX / RESIDFP_6581_DAC_RATIO_ONE,
+                            RESIDFP_6581_DAC_RATIO_MIN, RESIDFP_6581_DAC_RATIO_MAX, 0.005f, minimal);
+    gtk_widget_set_sensitive(dac6581, sid_present);
+    gtk_widget_set_tooltip_text(dac6581,
+            "2R/R ratio of the 6581 cutoff DAC. 2.000 is an ideal, smooth DAC;"
+            " higher values deepen the cutoff drops at FC 256, 512 and 1024"
+            " (2.200 is the reSIDfp default). Applies while playing.");
+    gtk_grid_attach(GTK_GRID(grid), dac6581label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), dac6581, 1, row, 1, 1);
+    row++;
+
     /*
      * 8580 ReSIDfp resources
      */
@@ -852,6 +938,27 @@ GtkWidget *mixer_widget_create(gboolean minimal, GtkAlign alignment)
     gtk_widget_set_hexpand(combinedstrength, TRUE);
     gtk_grid_attach(GTK_GRID(grid), combinedstrengthlabel, 0, row, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), combinedstrength, 1, row, 1, 1);
+    row++;
+
+    /* filter capacitors, both models: C1*C2 moves the cutoff, C2/C1 the resonance */
+    capc1label = create_label("ReSIDfp filter cap C1 (lowpass)", minimal, alignment);
+    capc1 = create_filter_cap_widget("SidResidFilterC1", minimal);
+    gtk_widget_set_sensitive(capc1, sid_present);
+    gtk_widget_set_tooltip_text(capc1,
+            "Deviation of CAP1 from its nominal value (10 % parts on real boards)."
+            " Together with C2 it moves the cutoff. Applies while playing.");
+    gtk_grid_attach(GTK_GRID(grid), capc1label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), capc1, 1, row, 1, 1);
+    row++;
+
+    capc2label = create_label("ReSIDfp filter cap C2 (bandpass)", minimal, alignment);
+    capc2 = create_filter_cap_widget("SidResidFilterC2", minimal);
+    gtk_widget_set_sensitive(capc2, sid_present);
+    gtk_widget_set_tooltip_text(capc2,
+            "Deviation of CAP2 from its nominal value. C2 larger than C1 gives"
+            " more resonance, smaller gives less. Applies while playing.");
+    gtk_grid_attach(GTK_GRID(grid), capc2label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), capc2, 1, row, 1, 1);
     row++;
 
 #endif

@@ -43,6 +43,7 @@
 #include "uivsidwindow.h"
 #include "vsidtuneinfowidget.h"
 #include "vsidcontrolwidget.h"
+#include "vsidexport.h"
 #include "vsidmixerwidget.h"
 #include "vsidplaylistwidget.h"
 #include "hvscstilwidget.h"
@@ -356,6 +357,7 @@ GtkWidget *vsid_main_widget_create(void)
     control_widget = vsid_control_widget_create();
     gtk_grid_attach(GTK_GRID(left_pane), control_widget, 0, 1, 1, 1);
 
+    vsid_mixer_widget_set_export_handler(vsid_export_dialog_show);
     mixer_widget = vsid_mixer_widget_create();
     gtk_widget_set_valign(mixer_widget, GTK_ALIGN_END);
     gtk_grid_attach(GTK_GRID(left_pane), mixer_widget, 0, 2, 1, 1);
