@@ -62,6 +62,9 @@ extern "C"
 
 #define DX_RELEASE(x) if (x) { (x)->Release(); (x) = NULL; }
 
+/** \brief How often to retry creating the swap chain after it failed (ms) */
+#define SWAP_CHAIN_RETRY_MS         500
+
 /** \brief Frames this much later than planned restart the pacing (pause, menus, ...) */
 #define PACING_RESET_MS             100.0
 
@@ -948,6 +951,10 @@ static void build_directx_resources(vice_directx_renderer_context_t *context)
 
     /* Now we need to create a swap chain for our hwnd */
 
+    if (!context->d3d_swap_chain && vice_directx_now_ms() < context->swap_chain_retry_ms) {
+        return; /* failed recently, try again later (see swap_chain_retry_ms) */
+    }
+
     if (!context->d3d_swap_chain) {
 
         DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = { 0 };
@@ -1009,7 +1016,9 @@ static void build_directx_resources(vice_directx_renderer_context_t *context)
                 log_message(LOG_DEFAULT, "DirectX: using flip model swap chain%s",
                             context->allow_tearing ? " (tearing supported)" : "");
             } else {
-                vice_directx_impl_log_windows_error("flip model d3d_swap_chain, falling back to bitblt model");
+                if (!context->swap_chain_failure_logged) {
+                    vice_directx_impl_log_windows_error("flip model d3d_swap_chain, falling back to bitblt model");
+                }
                 context->flip_model_failed = true;
             }
         }
@@ -1030,10 +1039,27 @@ static void build_directx_resources(vice_directx_renderer_context_t *context)
                 );
             if (FAILED(result))
             {
-                vice_directx_impl_log_windows_error("d3d_swap_chain");
-                vice_directx_destroy_context_impl(context);
+                /*
+                 * Keep the device and retry later: recreating everything
+                 * every frame takes a whole core (the driver is reloaded and
+                 * its signature checked each time) and, as it is done with the
+                 * canvas locked, stalls the emulator too.
+                 */
+                if (!context->swap_chain_failure_logged) {
+                    log_error(LOG_DEFAULT, "DirectX: cannot create a swap chain (0x%08lx), retrying every %d ms",
+                              (unsigned long)result, SWAP_CHAIN_RETRY_MS);
+                    context->swap_chain_failure_logged = true;
+                }
+                context->d3d_swap_chain = NULL;
+                context->swap_chain_retry_ms = vice_directx_now_ms() + SWAP_CHAIN_RETRY_MS;
+                /* neither model works now: try flip model first again next time */
+                context->flip_model_failed = false;
                 return;
             }
+        }
+        if (context->swap_chain_failure_logged) {
+            log_message(LOG_DEFAULT, "DirectX: swap chain created");
+            context->swap_chain_failure_logged = false;
         }
 
         /* Ensure that DXGI doesn't queue more than one frame at a time. */
@@ -1375,8 +1401,11 @@ void vice_directx_impl_async_render(void *job_data, void *pool_data)
 
     CANVAS_UNLOCK();
 
-    if (!context->d2d_device_context) {
-        log_message(LOG_DEFAULT, "no render target, not rendering this frame");
+    if (!context->d2d_device_context || !context->dxgi_bitmap) {
+        /* no device or no swap chain (yet): nothing to draw into */
+        if (!context->swap_chain_failure_logged) {
+            log_message(LOG_DEFAULT, "no render target, not rendering this frame");
+        }
         RENDER_UNLOCK();
         return;
     }
