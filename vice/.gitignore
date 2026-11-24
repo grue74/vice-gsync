@@ -1,0 +1,4 @@
+# CMake / Visual Studio build output (see build/msvc/README.md)
+/out/
+/.vs/
+/CMakeUserPresets.json

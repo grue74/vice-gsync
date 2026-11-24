@@ -1,0 +1,387 @@
+# CMakeLists.txt - Visual Studio (MSVC) build of VICE
+#
+# The autotools build (autogen.sh / configure) is the canonical build of VICE.
+# This CMake build exists to compile VICE with the Microsoft toolchain and to
+# open it in Visual Studio. Source lists are read from the Makefile.am files
+# (see build/msvc/ViceAutomake.cmake), so adding a file to a Makefile.am is
+# enough for it to be picked up here too.
+#
+# Quick start (Developer PowerShell for VS):
+#     cmake --preset vs2026
+#     cmake --build --preset vs2026-release
+# or open the folder in Visual Studio ("Open Folder") and pick a preset.
+#
+# Dependencies come from vcpkg (manifest: vcpkg.json).
+
+cmake_minimum_required(VERSION 3.25)
+
+project(vice VERSION 3.10.0 LANGUAGES C CXX)
+
+if(NOT MSVC)
+    message(FATAL_ERROR "This CMake build is meant for MSVC. Use autotools (./autogen.sh && ./configure) elsewhere.")
+endif()
+
+set(VICE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(VICE_MSVC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/msvc")
+set(VICE_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# ---------------------------------------------------------------------------
+# Options
+
+set(VICE_UI "sdl2" CACHE STRING "User interface: sdl2 or headless")
+set_property(CACHE VICE_UI PROPERTY STRINGS sdl2 headless)
+set(VICE_EMULATORS "x64;x64sc;x128;xscpu64" CACHE STRING "Emulators to build")
+
+# ---------------------------------------------------------------------------
+# Version
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/configure.ac" _configure_ac)
+string(REGEX MATCH "m4_define\\(vice_version_major, *([0-9]+)\\)" _ "${_configure_ac}")
+set(VICE_VERSION_MAJOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "m4_define\\(vice_version_minor, *([0-9]+)\\)" _ "${_configure_ac}")
+set(VICE_VERSION_MINOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "m4_define\\(vice_version_build, *([0-9]+)\\)" _ "${_configure_ac}")
+set(VICE_VERSION_BUILD ${CMAKE_MATCH_1})
+if(VICE_VERSION_BUILD EQUAL 0)
+    set(VICE_VERSION "${VICE_VERSION_MAJOR}.${VICE_VERSION_MINOR}")
+else()
+    set(VICE_VERSION "${VICE_VERSION_MAJOR}.${VICE_VERSION_MINOR}.${VICE_VERSION_BUILD}")
+endif()
+message(STATUS "VICE version ${VICE_VERSION}, UI: ${VICE_UI}")
+
+# ---------------------------------------------------------------------------
+# Dependencies (vcpkg)
+
+find_package(ZLIB REQUIRED)
+find_package(PNG REQUIRED)
+find_package(PThreads4W REQUIRED)
+if(VICE_UI STREQUAL "sdl2")
+    find_package(SDL2 CONFIG REQUIRED)
+    find_package(SDL2_image CONFIG REQUIRED)
+endif()
+
+# ---------------------------------------------------------------------------
+# Generated headers (config.h, version.h, debug.h, resid configuration, ...)
+
+set(USE_SDL2UI OFF)
+set(USE_HEADLESSUI OFF)
+set(USE_SDL_AUDIO OFF)
+set(HAVE_PNG ON)
+if(VICE_UI STREQUAL "sdl2")
+    set(USE_SDL2UI ON)
+    set(USE_SDL_AUDIO ON)
+else()
+    set(USE_HEADLESSUI ON)
+endif()
+
+configure_file("${VICE_MSVC_DIR}/config.h.in" "${VICE_GEN_DIR}/config.h")
+
+set(VERSION "${VICE_VERSION}")
+set(VERSION_RC "${VICE_VERSION_MAJOR},${VICE_VERSION_MINOR},${VICE_VERSION_BUILD},0")
+set(PACKAGE "vice")
+configure_file("${VICE_SRC_DIR}/version.h.in" "${VICE_GEN_DIR}/version.h" @ONLY)
+
+set(DEBUGBUILD 0)
+configure_file("${VICE_SRC_DIR}/debug.h.in" "${VICE_GEN_DIR}/debug.h" @ONLY)
+
+# reSID
+set(RESID_INLINING 1)
+set(RESID_INLINE "inline")
+set(RESID_BRANCH_HINTS 0)
+set(NEW_8580_FILTER 1)
+set(HAVE_BOOL 1)
+set(HAVE_BUILTIN_EXPECT 0)
+set(HAVE_LOG1P 1)
+set(RESID_HAVE_BOOL 1)
+set(HAVE_MMINTRIN_H 1)
+configure_file("${VICE_SRC_DIR}/resid/siddefs.h.in" "${VICE_GEN_DIR}/resid/siddefs.h" @ONLY)
+configure_file("${VICE_SRC_DIR}/resid-dtv/siddtvdefs.h.in" "${VICE_GEN_DIR}/resid-dtv/siddtvdefs.h" @ONLY)
+
+# reSID waveform tables: wave*.h are generated from wave*.dat (samp2src.pl)
+file(GLOB _resid_dats "${VICE_SRC_DIR}/resid/wave*.dat")
+foreach(_dat IN LISTS _resid_dats)
+    get_filename_component(_name "${_dat}" NAME_WE)
+    set(_out "${VICE_GEN_DIR}/resid/${_name}.h")
+    if(NOT EXISTS "${_out}" OR "${_dat}" IS_NEWER_THAN "${_out}")
+        file(READ "${_dat}" _hex HEX)
+        string(LENGTH "${_hex}" _len)
+        set(_body "{\n")
+        set(_i 0)
+        set(_pos 0)
+        while(_pos LESS _len)
+            if(_i EQUAL 0)
+                math(EXPR _addr "${_pos} / 2" OUTPUT_FORMAT HEXADECIMAL)
+                string(APPEND _body "/* ${_addr}: */ ")
+            endif()
+            string(SUBSTRING "${_hex}" ${_pos} 2 _byte)
+            math(EXPR _val "0x${_byte} << 4" OUTPUT_FORMAT HEXADECIMAL)
+            string(APPEND _body " ${_val},")
+            math(EXPR _i "(${_i} + 1) % 8")
+            if(_i EQUAL 0)
+                string(APPEND _body "\n")
+            endif()
+            math(EXPR _pos "${_pos} + 2")
+        endwhile()
+        string(APPEND _body "},\n")
+        file(WRITE "${_out}" "// generated from ${_name}.dat by CMakeLists.txt (equivalent of samp2src.pl)\n${_body}")
+    endif()
+endforeach()
+
+# Some headers are generated by shell scripts in src/buildtools. Run them with
+# the POSIX shell from Git for Windows when available. The checkout may have
+# CRLF line endings, so scripts and inputs are copied with CRs stripped first.
+find_program(VICE_BASH bash HINTS "C:/Program Files/Git/bin" "C:/Program Files/Git/usr/bin")
+
+# octal escape for a carriage return, as understood by tr(1)
+set(_CR "\\015")
+
+# vice_run_sh(<workdir> <shell command>) -> sets VICE_RUN_SH_OK
+function(vice_run_sh workdir cmd)
+    set(VICE_RUN_SH_OK FALSE PARENT_SCOPE)
+    if(NOT VICE_BASH)
+        return()
+    endif()
+    file(MAKE_DIRECTORY "${workdir}")
+    execute_process(COMMAND "${VICE_BASH}" -c "${cmd}"
+        WORKING_DIRECTORY "${workdir}" RESULT_VARIABLE rc)
+    if(rc EQUAL 0)
+        set(VICE_RUN_SH_OK TRUE PARENT_SCOPE)
+    endif()
+endfunction()
+
+# infocontrib.h (from doc/vice.texi); falls back to a stub
+if(NOT EXISTS "${VICE_GEN_DIR}/infocontrib.h")
+    file(READ "${VICE_SRC_DIR}/vicedate.h" _vicedate)
+    string(REGEX MATCH "VICEDATE_YEAR ([0-9]+)" _ "${_vicedate}")
+    set(_year ${CMAKE_MATCH_1})
+    set(_w "${VICE_GEN_DIR}/infocontrib")
+    vice_run_sh("${_w}"
+        "tr -d '${_CR}' < '${VICE_SRC_DIR}/buildtools/geninfocontrib_h.sh' > gen.sh && \
+tr -d '${_CR}' < '${VICE_SRC_DIR}/buildtools/infocontrib.sed' > gen.sed && \
+tr -d '${_CR}' < '${CMAKE_CURRENT_SOURCE_DIR}/doc/vice.texi' | sh gen.sh infocontrib.h ${_year} | \
+LC_ALL=C sed -f gen.sed | iconv -f ISO-8859-15 -t UTF-8 > infocontrib.h")
+    set(_size 0)
+    if(EXISTS "${_w}/infocontrib.h")
+        file(SIZE "${_w}/infocontrib.h" _size)
+    endif()
+    if(VICE_RUN_SH_OK AND _size GREATER 4000)
+        file(COPY_FILE "${_w}/infocontrib.h" "${VICE_GEN_DIR}/infocontrib.h")
+    else()
+        message(STATUS "infocontrib.h: using stub (could not run geninfocontrib_h.sh)")
+        configure_file("${VICE_MSVC_DIR}/infocontrib.h.stub" "${VICE_GEN_DIR}/infocontrib.h" COPYONLY)
+    endif()
+endif()
+
+# keysymtable.h (hotkeys, from vhkkeysyms.h)
+set(_keysyms "${VICE_SRC_DIR}/arch/shared/hotkeys/vhkkeysyms.h")
+if(NOT EXISTS "${VICE_GEN_DIR}/keysymtable.h" OR "${_keysyms}" IS_NEWER_THAN "${VICE_GEN_DIR}/keysymtable.h")
+    set(_w "${VICE_GEN_DIR}/keysymtable")
+    vice_run_sh("${_w}"
+        "tr -d '${_CR}' < '${VICE_SRC_DIR}/buildtools/genkeysymtable.sh' > genkeysymtable.sh && \
+tr -d '${_CR}' < '${VICE_SRC_DIR}/buildtools/genkeysymtable.awk' > genkeysymtable.awk && \
+tr -d '${_CR}' < '${_keysyms}' > vhkkeysyms.h && \
+sh ./genkeysymtable.sh vhkkeysyms.h keysymtable.h")
+    if(NOT VICE_RUN_SH_OK)
+        message(FATAL_ERROR "Could not generate keysymtable.h: Git for Windows (bash, awk, sort) is required")
+    endif()
+    file(COPY_FILE "${_w}/keysymtable.h" "${VICE_GEN_DIR}/keysymtable.h")
+endif()
+
+# Monitor parser/lexer. Use bison/flex from PATH if present, otherwise fetch
+# WinFlexBison (vcpkg has no port for it).
+find_program(VICE_BISON NAMES win_bison bison)
+find_program(VICE_FLEX NAMES win_flex flex)
+if(NOT VICE_BISON OR NOT VICE_FLEX)
+    include(FetchContent)
+    FetchContent_Declare(winflexbison
+        URL https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip
+        URL_HASH SHA256=8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(winflexbison)
+    set(VICE_BISON "${winflexbison_SOURCE_DIR}/win_bison.exe" CACHE FILEPATH "" FORCE)
+    set(VICE_FLEX "${winflexbison_SOURCE_DIR}/win_flex.exe" CACHE FILEPATH "" FORCE)
+endif()
+file(MAKE_DIRECTORY "${VICE_GEN_DIR}/monitor")
+add_custom_command(
+    OUTPUT "${VICE_GEN_DIR}/monitor/mon_parse.c" "${VICE_GEN_DIR}/monitor/mon_parse.h"
+    COMMAND "${VICE_BISON}" -y -d -t -o mon_parse.c "${VICE_SRC_DIR}/monitor/mon_parse.y"
+    DEPENDS "${VICE_SRC_DIR}/monitor/mon_parse.y"
+    WORKING_DIRECTORY "${VICE_GEN_DIR}/monitor"
+    COMMENT "bison mon_parse.y")
+add_custom_command(
+    OUTPUT "${VICE_GEN_DIR}/monitor/mon_lex.c"
+    COMMAND "${VICE_FLEX}" --wincompat -o mon_lex.c "${VICE_SRC_DIR}/monitor/mon_lex.l"
+    DEPENDS "${VICE_SRC_DIR}/monitor/mon_lex.l"
+    WORKING_DIRECTORY "${VICE_GEN_DIR}/monitor"
+    COMMENT "flex mon_lex.l")
+
+# ---------------------------------------------------------------------------
+# Common compile options, as an interface target every library links
+
+add_library(vice_options INTERFACE)
+target_include_directories(vice_options INTERFACE
+    "${VICE_GEN_DIR}"
+    "${VICE_GEN_DIR}/resid"
+    "${VICE_GEN_DIR}/resid-dtv"
+    "${VICE_GEN_DIR}/monitor"
+    "${VICE_MSVC_DIR}/include")
+target_compile_definitions(vice_options INTERFACE
+    _CRT_SECURE_NO_WARNINGS
+    _CRT_NONSTDC_NO_WARNINGS
+    _WINSOCK_DEPRECATED_NO_WARNINGS
+    NOMINMAX
+    SDL_MAIN_HANDLED
+    "VICE_DATADIR=\"C:/vice/share/vice\""
+    "VICE_DOCDIR=\"C:/vice/share/doc/vice\"")
+target_compile_options(vice_options INTERFACE
+    $<$<COMPILE_LANGUAGE:C>:/std:clatest>
+    $<$<COMPILE_LANGUAGE:CXX>:/std:c++17>
+    /utf-8
+    /MP
+    /W3
+    /wd4244 /wd4267 /wd4018 /wd4146 /wd4996 /wd4305 /wd4090 /wd4101 /wd4100)
+target_link_libraries(vice_options INTERFACE
+    ZLIB::ZLIB PNG::PNG PThreads4W::PThreads4W
+    ws2_32 winmm iphlpapi shlwapi ole32 uuid dbghelp ntdll avrt)
+if(USE_SDL2UI)
+    target_link_libraries(vice_options INTERFACE
+        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+        $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
+        opengl32)
+endif()
+
+# ---------------------------------------------------------------------------
+# Libraries from Makefile.am
+
+list(APPEND VICE_AM_CONDITIONS WINDOWS_COMPILE HAVE_RESID HAVE_RESID_DTV HAVE_FASTSID
+     NEW_8580_FILTER HAVE_X64_IMAGE)
+if(USE_SDL2UI)
+    list(APPEND VICE_AM_CONDITIONS USE_SDL2UI)
+else()
+    list(APPEND VICE_AM_CONDITIONS USE_HEADLESSUI)
+endif()
+include("${VICE_MSVC_DIR}/ViceAutomake.cmake")
+
+if(USE_SDL2UI)
+    set(VICE_ARCH_DIR "arch/sdl")
+else()
+    set(VICE_ARCH_DIR "arch/headless")
+endif()
+
+# Include directories of a Makefile.am (AM_CPPFLAGS -I...)
+function(vice_am_includes out dir)
+    vice_am_get(flags "${dir}" AM_CPPFLAGS)
+    vice_am_get(extra "${dir}" extra_includes)
+    list(APPEND flags ${extra})
+    set(result "")
+    foreach(f IN LISTS flags)
+        if(f MATCHES "^-I(.*)$")
+            set(p "${CMAKE_MATCH_1}")
+            string(REPLACE "$(top_srcdir)" "${CMAKE_CURRENT_SOURCE_DIR}" p "${p}")
+            string(REPLACE "$(top_builddir)" "${CMAKE_CURRENT_SOURCE_DIR}" p "${p}")
+            string(REPLACE "$(srcdir)" "${VICE_SRC_DIR}/${dir}" p "${p}")
+            string(REPLACE "$(ARCH_DIR)" "${VICE_SRC_DIR}/${VICE_ARCH_DIR}" p "${p}")
+            # some Makefile.am hard-code the SDL arch dir; use the active one
+            string(REPLACE "${VICE_SRC_DIR}/arch/sdl" "${VICE_SRC_DIR}/${VICE_ARCH_DIR}" p "${p}")
+            if(NOT p MATCHES "\\$")
+                list(APPEND result "${p}")
+            endif()
+        endif()
+    endforeach()
+    set(${out} "${result}" PARENT_SCOPE)
+endfunction()
+
+# Every library target is named vice_<dir>_<libname>
+set(VICE_ALL_LIBS "")
+function(vice_lib_target out dir libname)
+    string(MAKE_C_IDENTIFIER "vice_${dir}_${libname}" t)
+    set(${out} "${t}" PARENT_SCOPE)
+endfunction()
+
+function(vice_add_lib dir libname)
+    vice_lib_target(t "${dir}" "${libname}")
+    if(TARGET ${t})
+        return()
+    endif()
+    vice_am_library(${t} "${dir}" "${libname}" ${ARGN})
+    vice_am_includes(incs "${dir}")
+    # the ARCH_INCLUDES substitution
+    list(APPEND incs
+        "${VICE_SRC_DIR}/${VICE_ARCH_DIR}"
+        "${VICE_SRC_DIR}/arch/shared"
+        "${VICE_SRC_DIR}"
+        "${VICE_SRC_DIR}/${dir}")
+    target_include_directories(${t} PRIVATE ${incs})
+endfunction()
+
+# Map "$(top_builddir)/src/<dir>/lib<name>.a" (as in the top Makefile.am) to a target
+function(vice_resolve_libs out tokens)
+    set(result "")
+    foreach(tok IN LISTS tokens)
+        string(REPLACE "$(ARCH_DIR)" "$(top_builddir)/src/${VICE_ARCH_DIR}" tok "${tok}")
+        if(tok MATCHES "/src/(.+)/lib([A-Za-z0-9_]+)\\.a$")
+            set(dir "${CMAKE_MATCH_1}")
+            set(name "${CMAKE_MATCH_2}")
+            if(dir MATCHES "libresidfp")
+                continue()
+            endif()
+            vice_add_lib("${dir}" "${name}")
+            vice_lib_target(t "${dir}" "${name}")
+            list(APPEND result ${t})
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES result)
+    set(${out} "${result}" PARENT_SCOPE)
+endfunction()
+
+# Libraries whose sources configure selects via @SUBST@ need explicit extras
+set(_sound_extra soundwmm.c)
+if(USE_SDL_AUDIO)
+    list(APPEND _sound_extra soundsdl.c)
+endif()
+vice_add_lib("arch/shared/sounddrv" "sounddrv" EXTRA ${_sound_extra})
+vice_add_lib("gfxoutputdrv" "gfxoutputdrv" EXTRA pngdrv.c)
+vice_add_lib("sid" "sid" EXTRA resid.cc)
+vice_add_lib("resid" "resid")
+vice_lib_target(_t "resid" "resid")
+target_compile_definitions(${_t} PRIVATE "VERSION=\"1.0-pre2\"")
+vice_lib_target(_t "monitor" "monitor")
+vice_add_lib("monitor" "monitor")
+target_sources(${_t} PRIVATE "${VICE_GEN_DIR}/monitor/mon_parse.c" "${VICE_GEN_DIR}/monitor/mon_lex.c")
+vice_add_lib("lib/linenoise-ng" "linenoiseng")
+vice_add_lib("arch/shared" "archdep")
+vice_add_lib("${VICE_ARCH_DIR}" "arch")
+
+# ---------------------------------------------------------------------------
+# Emulators
+
+vice_am_get(_base_sources "." base_sources)
+vice_am_get(_midi_sources "." midi_sources)
+vice_am_includes(_top_includes ".")
+
+foreach(emu IN LISTS VICE_EMULATORS)
+    vice_am_get(_libs "." "${emu}_libs")
+    vice_am_get(_extlibs "." emu_extlibs)
+    vice_resolve_libs(_targets "${_libs};${_extlibs}")
+    vice_lib_target(_t_sid "sid" "sid")
+    vice_lib_target(_t_resid "resid" "resid")
+    vice_lib_target(_t_arch "${VICE_ARCH_DIR}" "arch")
+
+    vice_am_get(_srcs "." "${emu}_SOURCES")
+    list(TRANSFORM _srcs PREPEND "${VICE_SRC_DIR}/")
+
+    add_executable(${emu} ${_srcs})
+    target_include_directories(${emu} PRIVATE ${_top_includes}
+        "${VICE_SRC_DIR}/${VICE_ARCH_DIR}" "${VICE_SRC_DIR}/arch/shared")
+    target_link_libraries(${emu} PRIVATE vice_options ${_targets} ${_t_resid} ${_t_arch})
+    set_target_properties(${emu} PROPERTIES
+        FOLDER "emulators"
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VS_DEBUGGER_COMMAND_ARGUMENTS "-directory \"${CMAKE_CURRENT_SOURCE_DIR}/data\"")
+endforeach()
+
+if(VICE_EMULATORS)
+    list(GET VICE_EMULATORS 0 _first)
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${_first})
+endif()

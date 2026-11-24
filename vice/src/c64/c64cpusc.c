@@ -28,7 +28,9 @@
 
 #include <stdio.h>
 
+#include "c64meminit.h"
 #include "cpmcart.h"
+#include "mainc64cpu.h"
 #include "monitor.h"
 #include "vicii-cycle.h"
 
@@ -44,11 +46,22 @@ CLOCK maincpu_clk_limit = 0L;
 /* Mask: BA low */
 int maincpu_ba_low_flags = 0;
 
-#define CLK_INC()                                  \
-    interrupt_delay();                             \
-    maincpu_clk++;                                 \
-    maincpu_ba_low_flags &= ~MAINCPU_BA_LOW_VICII; \
-    maincpu_ba_low_flags |= vicii_cycle()
+/*
+ * One CPU cycle. With the CPU turbo the system clock (maincpu_clk, which runs
+ * the VIC-II and everything else) only advances every maincpu_turbo_div CPU
+ * cycles. The interrupt delays are counted in CPU cycles.
+ */
+#define CLK_INC()                                                    \
+    do {                                                             \
+        interrupt_delay();                                           \
+        if (maincpu_turbo_div == 1                                   \
+            || ++maincpu_turbo_cycle >= maincpu_turbo_div) {         \
+            maincpu_turbo_cycle = 0;                                 \
+            maincpu_clk++;                                           \
+            maincpu_ba_low_flags &= ~MAINCPU_BA_LOW_VICII;           \
+            maincpu_ba_low_flags |= vicii_cycle();                   \
+        }                                                            \
+    } while (0)
 
 
 /* Skip cycle implementation */

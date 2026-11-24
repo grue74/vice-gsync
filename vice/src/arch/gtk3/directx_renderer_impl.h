@@ -156,6 +156,18 @@ typedef struct vice_directx_renderer_context_s {
     /** \brief don't try flip model again after it failed once */
     bool flip_model_failed;
 
+    /**
+     * \brief when to try creating the swap chain again after it failed (ms)
+     *
+     * It fails when the window can't be shown (e.g. no interactive desktop).
+     * The device is kept and the swap chain retried now and then: recreating
+     * everything every frame costs a whole core and stalls the emulator.
+     */
+    double swap_chain_retry_ms;
+
+    /** \brief the missing swap chain / render target has been logged */
+    bool swap_chain_failure_logged;
+
     /*
      * Frame pacing. The emulator is paced by the audio device and delivers
      * frames in bursts (several ms of jitter). With VSync on, presents are

@@ -1,0 +1,110 @@
+/*
+ * config.h - hand-maintained configuration for the MSVC/CMake build of VICE.
+ *
+ * The autotools build generates config.h from configure.ac. This file
+ * replaces it for Visual Studio builds; it is processed by CMake's
+ * configure_file() into the build directory (never into src/).
+ *
+ * This file is part of VICE, the Versatile Commodore Emulator.
+ * See README for copyright notice.
+ */
+
+#ifndef VICE_CONFIG_H
+#define VICE_CONFIG_H
+
+/* ------------------------------------------------------------------------- */
+/* Package / platform                                                        */
+
+#define PACKAGE "vice"
+#define VERSION "@VICE_VERSION@"
+#define PACKAGE_NAME "vice"
+#define PACKAGE_VERSION "@VICE_VERSION@"
+#define PACKAGE_STRING "vice @VICE_VERSION@"
+#define PACKAGE_TARNAME "vice"
+#define PACKAGE_BUGREPORT ""
+#define PACKAGE_URL ""
+#define PREFIX "C:/vice"
+#define CONFIGURE_FLAGS "cmake-msvc"
+
+#define WINDOWS_COMPILE 1
+
+/* UI selection */
+#cmakedefine USE_SDL2UI 1
+#cmakedefine USE_HEADLESSUI 1
+
+/* ------------------------------------------------------------------------- */
+/* Emulation features                                                        */
+
+#define HAVE_RESID 1
+#define HAVE_RESID_DTV 1
+#define HAVE_FASTSID 1
+#define HAVE_NEW_8580_FILTER 1
+#define HAVE_MOUSE 1
+#define HAVE_LIGHTPEN 1
+#define HAVE_X64_IMAGE 1
+#define FEATURE_CPUMEMHISTORY 1
+#define HAVE_NETWORK 1
+#define HAVE_RS232NET 1
+#define HAVE_RS232DEV 1
+#define HAVE_SOCKLEN_T 1
+#define HAVE_HTONL 1
+#define HAVE_HTONS 1
+#ifdef USE_SDL2UI
+#define HAVE_HWSCALE 1
+#define HAVE_SDL_NUMJOYSTICKS 1
+#endif
+#cmakedefine USE_SDL_AUDIO 1
+#cmakedefine HAVE_PNG 1
+#define HAVE_ZLIB 1
+
+/* Not (yet) supported in the MSVC build:
+ * HAVE_RESIDFP, HAVE_RAWNET (pcap), HAVE_MIDI, HAVE_HARDSID, HAVE_PARSID,
+ * HAVE_CATWEASELMKIII, HAVE_USBSID, HAVE_REALDEVICE (OpenCBM), HAVE_LIBCURL,
+ * USE_MPG123, USE_LAMEMP3, USE_FLAC, USE_VORBIS, USE_DXSOUND
+ */
+
+/* ------------------------------------------------------------------------- */
+/* Headers / functions available with the MSVC CRT + Windows SDK             */
+
+#define HAVE_DIRECT_H 1
+#define HAVE_ERRNO_H 1
+#define HAVE_FCNTL_H 1
+#define HAVE_LIMITS_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_IO_H 1
+#define HAVE_PROCESS_H 1
+#define HAVE_SIGNAL_H 1
+#define HAVE_WCHAR_H 1
+#define HAVE_MATH_H 1
+#define HAVE_LOCALE_H 1
+#define HAVE_MEMORY_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_COMMCTRL_H 1
+#define HAVE_SHLOBJ_H 1
+#define HAVE_WINIOCTL_H 1
+#define HAVE_WINSOCK_H 1
+#define HAVE_STRDUP 1
+#define HAVE_ROUND 1
+#define HAVE__FSEEKI64 1
+#define HAVE__FTELLI64 1
+#define HAVE_TIME_T_IN_TIME_H 1
+#define HAVE_TIME_T_IN_TYPES_H 1
+#define HAVE_OFF_T_IN_SYS_TYPES 1
+#define HAVE_OFF_T 1
+#define TIME_T_IS_64BIT 1
+#define STDC_HEADERS 1
+
+#define SIZEOF_UNSIGNED_INT 4
+#define SIZEOF_UNSIGNED_LONG 4
+#define SIZEOF_UNSIGNED_SHORT 2
+
+/* ------------------------------------------------------------------------- */
+/* MSVC portability shims                                                    */
+
+#include "msvc_compat.h"
+
+#endif /* VICE_CONFIG_H */
