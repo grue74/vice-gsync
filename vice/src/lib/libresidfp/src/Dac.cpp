@@ -69,12 +69,13 @@ double Dac::getOutput(unsigned int input, bool saturate) const
     return dacValue;
 }
 
-void Dac::kinkedDac(ChipModel chipModel, double leakLevel)
+void Dac::kinkedDac(ChipModel chipModel, double leakLevel, double ratio2R)
 {
     constexpr double R_INFINITY = 1e6;
 
     // Non-linearity parameter, 8580 DACs are perfectly linear
-    const double _2R_div_R = chipModel == MOS6581 ? 2.20 : 2.00;
+    // (ratio2R > 0 overrides it, to experiment with the 6581 kinks)
+    const double _2R_div_R = ratio2R > 0. ? ratio2R : (chipModel == MOS6581 ? 2.20 : 2.00);
 
     // 6581 DACs are not terminated by a 2R resistor
     const bool term = chipModel == CSG8580;

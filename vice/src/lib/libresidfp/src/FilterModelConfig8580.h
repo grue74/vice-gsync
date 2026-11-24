@@ -59,10 +59,20 @@ private:
     FilterModelConfig8580();
     ~FilterModelConfig8580() = default;
 
+    /// Resonance strength (ladder gain divisor, 1.0 = nominal)
+    double resonanceStrength = 1.0;
+
 protected:
     inline double getVoiceDC(uint8_t) const override { return getVref(); }
 
 public:
+    /**
+     * Resonance strength: the resonance ladder gain (1/Q) is divided by it,
+     * so 2.0 doubles Q, 0.5 halves it (1.0 = nominal). Rebuilds the resonance
+     * table (shared by all 8580 filters).
+     */
+    void setResonanceStrength(double strength);
+
     static FilterModelConfig8580* getInstance();
 
     static inline constexpr double getVref() { return Vref * VOLTAGE_SKEW; }

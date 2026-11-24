@@ -84,7 +84,7 @@ int32_t Integrator6581::solve(int32_t vi) const
 #endif
 
     // Change in capacitor charge.
-    vc += n_I_snake + n_I_vcr;
+    vc += charge(n_I_snake + n_I_vcr);
 
     // vx = g(vc)
     const int32_t tmp = (vc >> 15) - INT16_MIN;

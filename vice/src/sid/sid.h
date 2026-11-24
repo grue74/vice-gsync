@@ -190,6 +190,41 @@ enum {
 #define RESIDFP_COMBINED_WAVEFORM_STRENGTH_ONE      1
 #define RESIDFP_COMBINED_WAVEFORM_STRENGTH_DEFAULT  1
 
+/* external filter capacitors C1 (CAP1A/B, lowpass integrator) and C2 (CAP2A/B,
+   bandpass integrator): deviation from the nominal value in 0.1 % */
+#define RESIDFP_FILTER_CAP_MIN                    -200
+#define RESIDFP_FILTER_CAP_MAX                    200
+#define RESIDFP_FILTER_CAP_ONE                    10
+#define RESIDFP_FILTER_CAP_DEFAULT                0
+
+/* 6581 cutoff DAC 2R/R ratio x1000: 2000 = ideal linear DAC, 2200 = reSIDfp
+   default; higher values deepen the drops at the FC bit carries */
+#define RESIDFP_6581_DAC_RATIO_MIN                1900
+#define RESIDFP_6581_DAC_RATIO_MAX                2600
+#define RESIDFP_6581_DAC_RATIO_ONE                1000
+#define RESIDFP_6581_DAC_RATIO_DEFAULT            2200
+
+/* 6581 snake resistor W/L scale x1000: 1000 = nominal (1/115); higher =
+   lower resistance = higher floor of the cutoff curve */
+#define RESIDFP_6581_SNAKE_MIN                    250
+#define RESIDFP_6581_SNAKE_MAX                    4000
+#define RESIDFP_6581_SNAKE_ONE                    1000
+#define RESIDFP_6581_SNAKE_DEFAULT                1000
+
+/* resonance strength x1000 (both models): the resonance ladder gain is divided
+   by it, so 2000 doubles Q (on the 6581 not at resonance 15) */
+#define RESIDFP_RESONANCE_STRENGTH_MIN            250
+#define RESIDFP_RESONANCE_STRENGTH_MAX            4000
+#define RESIDFP_RESONANCE_STRENGTH_ONE            1000
+#define RESIDFP_RESONANCE_STRENGTH_DEFAULT        1000
+
+/* 6581 op-amp gain x1000 around the working point: higher = less integrator
+   loss = more resonance (also at resonance 15), and a higher cutoff */
+#define RESIDFP_6581_OPAMP_GAIN_MIN               500
+#define RESIDFP_6581_OPAMP_GAIN_MAX               2500
+#define RESIDFP_6581_OPAMP_GAIN_ONE               1000
+#define RESIDFP_6581_OPAMP_GAIN_DEFAULT           1000
+
 
 void machine_sid2_enable(int val);
 

@@ -62,6 +62,8 @@ extern log_t sound_log;
 
 #include "src/SID.h"
 
+#include <chrono>
+
 using namespace reSIDfp;
 
 extern "C" {
@@ -80,9 +82,106 @@ struct sound_s
 
     /* resid sid implementation */
     reSIDfp::SID *sid;
+
+    /* filter capacitor settings applied to this chip (see residfp_caps_gen) */
+    unsigned int caps_gen;
 };
 
 typedef struct sound_s sound_t;
+
+/* Filter capacitors C1/C2, deviation from nominal in 0.1 %. Set from the
+   resources (UI thread), applied by each chip before its next sound buffer,
+   so that they can be changed while a tune plays without a SID re-init. */
+static volatile int residfp_caps_c1 = 0;
+static volatile int residfp_caps_c2 = 0;
+static volatile int residfp_dac_ratio = 2200;
+static volatile int residfp_snake_scale = 1000;
+
+/* resonance strength and 6581 op-amp gain: tables shared by all chips, rebuilt
+   on the sound side once the value has been still for TABLES_SETTLE_MS */
+#define TABLES_SETTLE_MS 200
+static volatile int residfp_res_strength = 1000;
+static volatile int residfp_opamp_gain = 1000;
+static volatile long long residfp_tables_changed_ms = 0;
+static int residfp_res_strength_applied = -1;
+static int residfp_opamp_gain_applied = -1;
+
+static long long residfp_now_ms(void)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+static volatile unsigned int residfp_caps_gen = 1;
+
+void residfp_set_filter_caps(int c1, int c2)
+{
+    residfp_caps_c1 = c1;
+    residfp_caps_c2 = c2;
+    residfp_caps_gen = residfp_caps_gen + 1;
+}
+
+void residfp_set_dac_ratio(int ratio)
+{
+    residfp_dac_ratio = ratio;
+    residfp_caps_gen = residfp_caps_gen + 1;
+}
+
+void residfp_set_resonance_strength(int strength)
+{
+    residfp_res_strength = strength;
+    residfp_tables_changed_ms = residfp_now_ms();
+}
+
+void residfp_set_opamp_gain(int gain)
+{
+    residfp_opamp_gain = gain;
+    residfp_tables_changed_ms = residfp_now_ms();
+}
+
+/* Rebuild the shared tables if their settings changed and have settled (the
+   first time at once). Runs on the sound side, between buffers. */
+static void residfp_apply_filter_tables(sound_t *psid)
+{
+    int strength = residfp_res_strength;
+    int gain = residfp_opamp_gain;
+    int first = residfp_res_strength_applied < 0;
+
+    if (strength == residfp_res_strength_applied && gain == residfp_opamp_gain_applied) {
+        return;
+    }
+    if (!first && residfp_now_ms() - residfp_tables_changed_ms < TABLES_SETTLE_MS) {
+        return;
+    }
+    if (strength != residfp_res_strength_applied) {
+        psid->sid->setFilterResonanceStrength(strength / 1000.0);
+        residfp_res_strength_applied = strength;
+    }
+    if (gain != residfp_opamp_gain_applied) {
+        psid->sid->setFilter6581OpampGain(gain / 1000.0);
+        residfp_opamp_gain_applied = gain;
+    }
+}
+
+void residfp_set_snake_scale(int scale)
+{
+    residfp_snake_scale = scale;
+    residfp_caps_gen = residfp_caps_gen + 1;
+}
+
+static void residfp_apply_filter_caps(sound_t *psid)
+{
+    unsigned int gen = residfp_caps_gen;
+
+    residfp_apply_filter_tables(psid);
+
+    if (psid->caps_gen != gen) {
+        psid->caps_gen = gen;
+        psid->sid->setFilterCapacitors(1.0 + residfp_caps_c1 / 1000.0,
+                                       1.0 + residfp_caps_c2 / 1000.0);
+        psid->sid->setFilter6581DacRatio(residfp_dac_ratio / 1000.0);
+        psid->sid->setFilter6581SnakeScale(residfp_snake_scale / 1000.0);
+    }
+}
 
 /* manage temporary buffers. if the requested size is smaller or equal to the
  * size of the already allocated buffer, reuse it.  */
@@ -112,6 +211,7 @@ static sound_t *residfp_open(uint8_t *sidstate, int chipno)
     psid = new sound_t;
     psid->chipno = chipno;
     psid->sid = new reSIDfp::SID;
+    psid->caps_gen = 0;
 
     for (i = 0x00; i <= 0x18; i++) {
         psid->sid->write(i, sidstate[i]);
@@ -210,6 +310,8 @@ static int residfp_init(sound_t *psid, int speed, int cycles_per_sec, int factor
     /* FIXME: also handle CAPS330 ("Galway C128") */
     psid->sid->set6581caps(old_caps ? CAPS2200 : CAPS470);
     psid->sid->setCombinedWaveforms(combined_table[combined_strength_int]);
+    psid->caps_gen = 0;
+    residfp_apply_filter_caps(psid);
 
     switch (sampling) {
         default:
@@ -277,6 +379,8 @@ static int residfp_calculate_samples(sound_t *psid, float *pbuf, int nr, CLOCK *
     int int_delta_t = (int)*delta_t;
     int i;
 
+    residfp_apply_filter_caps(psid);
+
     /* Advance digital SID state while low-speed playback is muted. */
     if (sound_not_sensible_speed_to_play()) {
         psid->sid->clockDigital((unsigned int)*delta_t);
@@ -312,6 +416,8 @@ static int residfp_calculate_samples(sound_t *psid, short *pbuf, int nr, int int
     short *tmp_buf;
     int retval = 0;
     int int_delta_t = (int)*delta_t;
+
+    residfp_apply_filter_caps(psid);
 
     /* Advance digital SID state while low-speed playback is muted. */
     if (sound_not_sensible_speed_to_play()) {

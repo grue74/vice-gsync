@@ -25,8 +25,10 @@
 #include "Integrator8580.h"
 #include "OpAmp.h"
 
+#include <cmath>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #if defined(HAVE_CXX20) && defined(__cpp_lib_jthread)
 #  define HAVE_JTHREADS
@@ -125,6 +127,30 @@ FilterModelConfig8580* FilterModelConfig8580::getInstance()
         (instance.reset(new FilterModelConfig8580()), instance.get());
 
     return config;
+}
+
+void FilterModelConfig8580::setResonanceStrength(double strength)
+{
+    if (strength < 0.25) strength = 0.25;
+    if (strength > 4.0) strength = 4.0;
+    if (std::abs(strength - resonanceStrength) < 1e-9)
+        return;
+    resonanceStrength = strength;
+
+    OpAmp opampModel(
+        std::vector<Spline::Point>(
+            std::begin(opamp_voltage),
+            std::end(opamp_voltage)),
+        Vddt,
+        vmin,
+        vmax);
+
+    double gains[16];
+    for (int i = 0; i < 16; i++)
+    {
+        gains[i] = resGain[i] / resonanceStrength;
+    }
+    buildResonanceTable(opampModel, gains);
 }
 
 FilterModelConfig8580::FilterModelConfig8580() :

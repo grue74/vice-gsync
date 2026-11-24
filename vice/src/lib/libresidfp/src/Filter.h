@@ -146,6 +146,15 @@ public:
     virtual ~Filter() = default;
 
     /**
+     * Set the two external filter capacitors relative to their nominal
+     * value (1.0 = nominal; 1.1 = 10 % larger).
+     *
+     * @param c1 CAP1A/B, on the integrator producing the lowpass output
+     * @param c2 CAP2A/B, on the integrator producing the bandpass output
+     */
+    virtual void setCapacitors(double c1, double c2) = 0;
+
+    /**
      * SID clocking - 1 cycle
      *
      * @param voice1 voice 1 in

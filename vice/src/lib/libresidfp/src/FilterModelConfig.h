@@ -133,6 +133,9 @@ protected:
 
     void calcCurrFactorCoeff();
 
+    /// (Re)build the reverse op-amp transfer table (opamp_rev) from a curve
+    void buildOpampRev(const Spline::Point *opamp_voltage, int opamp_size);
+
     virtual double getVoiceDC(uint8_t env) const = 0;
 
     /**

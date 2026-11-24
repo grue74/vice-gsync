@@ -169,6 +169,10 @@ FilterModelConfig6581::FilterModelConfig6581() :
     dac_zero(7.15),
     dac_scale(2.63),
     dac(DAC_BITS),
+    dacRatio(2.20),
+    resonanceStrength(1.0),
+    opampGain(1.0),
+    opampPoints(std::begin(opamp_voltage), std::end(opamp_voltage)),
     m_capsType(CAPS470)
 {
     updateParams();
@@ -311,6 +315,94 @@ FilterModelConfig6581::FilterModelConfig6581() :
     thdVcrVg.join();
     thdVcrIds.join();
 #endif
+}
+
+void FilterModelConfig6581::setDacRatio(double ratio)
+{
+    if (ratio < 1.5) ratio = 1.5;
+    if (ratio > 3.0) ratio = 3.0;
+    if (std::abs(ratio - dacRatio) < 1e-9)
+        return;
+    dacRatio = ratio;
+    dac.kinkedDac(MOS6581, 1.0, ratio);
+}
+
+void FilterModelConfig6581::buildResonance()
+{
+    OpAmp opampModel(opampPoints, Vddt, vmin, vmax);
+
+    double resonance_n[16];
+    for (int n8 = 0; n8 < 16; n8++)
+    {
+        resonance_n[n8] = ((~n8 & 0xf) / 8.0) / resonanceStrength;
+    }
+
+    buildResonanceTable(opampModel, resonance_n);
+}
+
+void FilterModelConfig6581::setResonanceStrength(double strength)
+{
+    if (strength < 0.25) strength = 0.25;
+    if (strength > 4.0) strength = 4.0;
+    if (std::abs(strength - resonanceStrength) < 1e-9)
+        return;
+    resonanceStrength = strength;
+    buildResonance();
+}
+
+void FilterModelConfig6581::setOpampGain(double gain)
+{
+    if (gain < 0.25) gain = 0.25;
+    if (gain > 4.0) gain = 4.0;
+    if (std::abs(gain - opampGain) < 1e-9)
+        return;
+    opampGain = gain;
+
+    // Reshape the curve around the working point (vi = vo). The end points
+    // stay, so the normalization of all other values doesn't change.
+    const double wp = 4.54;
+    const double x0 = opamp_voltage[0].x;
+    const double xN = opamp_voltage[OPAMP_SIZE - 1].x;
+    std::vector<Spline::Point> pts(std::begin(opamp_voltage), std::end(opamp_voltage));
+    for (unsigned int i = 1; i + 1 < OPAMP_SIZE; i++)
+    {
+        double x = wp + (opamp_voltage[i].x - wp) / gain;
+        const double lo = pts[i - 1].x + 1e-3;
+        const double hi = xN - 1e-3 * (OPAMP_SIZE - 1 - i);
+        if (x < lo) x = lo;
+        if (x > hi) x = hi;
+        if (x < x0) x = x0;
+        pts[i].x = x;
+    }
+    opampPoints = pts;
+
+    buildOpampRev(opampPoints.data(), static_cast<int>(opampPoints.size()));
+
+    auto filterSummer = [this]
+    {
+        OpAmp opampModel(opampPoints, Vddt, vmin, vmax);
+        buildSummerTable(opampModel);
+    };
+    auto filterMixer = [this]
+    {
+        OpAmp opampModel(opampPoints, Vddt, vmin, vmax);
+        buildMixerTable(opampModel, 8.0 / (6.0 * VF_TR_RATIO));
+    };
+    auto filterGain = [this]
+    {
+        OpAmp opampModel(opampPoints, Vddt, vmin, vmax);
+        buildVolumeTable(opampModel, 12.0);
+    };
+    auto filterResonance = [this] { buildResonance(); };
+
+    std::thread t1(filterSummer);
+    std::thread t2(filterMixer);
+    std::thread t3(filterGain);
+    std::thread t4(filterResonance);
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
 }
 
 uint16_t* FilterModelConfig6581::getDAC(double adjustment) const

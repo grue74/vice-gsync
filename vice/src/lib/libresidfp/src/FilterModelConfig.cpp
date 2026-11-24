@@ -54,7 +54,11 @@ FilterModelConfig::FilterModelConfig(
     resonance(new uint16_t[16 * (1 << 16)])
 {
     calcCurrFactorCoeff();
+    buildOpampRev(opamp_voltage, opamp_size);
+}
 
+void FilterModelConfig::buildOpampRev(const Spline::Point *opamp_voltage, int opamp_size)
+{
     // Convert op-amp voltage transfer to 16 bit values.
 
     std::vector<Spline::Point> scaled_voltage(opamp_size);

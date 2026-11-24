@@ -295,12 +295,16 @@ protected:
 
     void restartIntegrators() override { hpIntegrator.restart(); bpIntegrator.restart(); }
 
+
     int32_t getNormalizedMixerVoice(float v, uint8_t env) const override
     {
         return getNormalizedVoice(v, env);
     }
 
 public:
+    // hpIntegrator turns Vhp into Vbp (CAP2), bpIntegrator Vbp into Vlp (CAP1)
+    void setCapacitors(double c1, double c2) override { hpIntegrator.setCapacitor(c2); bpIntegrator.setCapacitor(c1); }
+
     Filter8580() :
         Filter(*FilterModelConfig8580::getInstance(), hpIntegrator, bpIntegrator),
         hpIntegrator(*FilterModelConfig8580::getInstance()),

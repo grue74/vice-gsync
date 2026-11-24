@@ -166,7 +166,11 @@ class Integrator6581 : public Integrator
     friend class State;
 
 private:
-    const double wlSnake;
+    /// W/L of the "snake" (the fixed resistor beside the VCR), nominal * scale
+    double wlSnake;
+
+    /// nominal snake W/L (1/115)
+    const double wlSnakeNominal;
 
 #ifdef SLOPE_FACTOR
     // Slope factor n = 1/k
@@ -186,6 +190,7 @@ private:
 public:
     explicit Integrator6581(FilterModelConfig6581& new_fmc) :
         wlSnake(new_fmc.getWL_snake()),
+        wlSnakeNominal(new_fmc.getWL_snake()),
 #ifdef SLOPE_FACTOR
         n(1.4),
 #endif
@@ -196,6 +201,18 @@ public:
         fmc(new_fmc) {}
 
     void setVw(uint16_t Vw) { nVddt_Vw_2 = ((nVddt - Vw) * (nVddt - Vw)) >> 1; }
+
+    /**
+     * Scale the snake W/L (1.0 = nominal 1/115). The snake carries the
+     * integrator current when the VCR is nearly off, so it sets the floor of
+     * the cutoff curve; chips differ here.
+     */
+    void setSnakeScale(double scale)
+    {
+        if (scale < 0.1) scale = 0.1;
+        if (scale > 10.) scale = 10.;
+        wlSnake = wlSnakeNominal * scale;
+    }
 
     int32_t solve(int32_t vi) const override;
 };

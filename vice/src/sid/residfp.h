@@ -31,4 +31,20 @@
 
 extern sid_engine_t residfp_hooks;
 
+/* Set the filter capacitor deviations (0.1 % units) of all reSIDfp chips.
+   Takes effect at the next sound buffer, also while playing. */
+void residfp_set_filter_caps(int c1, int c2);
+
+/* Set the 6581 cutoff DAC 2R/R ratio (x1000) of all reSIDfp chips, live. */
+void residfp_set_dac_ratio(int ratio);
+
+/* Set the 6581 snake W/L scale (x1000) of all reSIDfp chips, live. */
+void residfp_set_snake_scale(int scale);
+
+/* Set the resonance strength (x1000, both models) and the 6581 op-amp gain
+   (x1000). These rebuild tables shared by all chips (~50 ms each), so they
+   are applied once the value has stayed the same for a moment. */
+void residfp_set_resonance_strength(int strength);
+void residfp_set_opamp_gain(int gain);
+
 #endif

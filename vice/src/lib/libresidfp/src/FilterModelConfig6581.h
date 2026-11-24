@@ -25,6 +25,8 @@
 
 #include "FilterModelConfig.h"
 
+#include <vector>
+
 #include <memory>
 
 #include "Dac.h"
@@ -77,6 +79,20 @@ private:
     /// DAC lookup table
     Dac dac;
 
+    /// 2R/R ratio of the cutoff DAC
+    double dacRatio;
+
+    /// Resonance strength (ladder gain divisor, 1.0 = nominal)
+    double resonanceStrength;
+
+    /// Op-amp gain around the working point (1.0 = measured curve)
+    double opampGain;
+
+    /// Op-amp transfer curve in use (measured curve reshaped by opampGain)
+    std::vector<Spline::Point> opampPoints;
+
+    void buildResonance();
+
     /// Voltage Controlled Resistors
     //@{
     uint16_t vcr_nVg[1 << 16];
@@ -123,6 +139,34 @@ public:
      * @return the DAC table
      */
     uint16_t* getDAC(double adjustment) const;
+
+    /**
+     * Set the 2R/R ratio of the cutoff DAC (2.20 by default; 2.00 is an ideal,
+     * linear DAC). Larger values deepen the drops at the bit carries
+     * (FC 255/256, 511/512, 1023/1024). Filters pick it up at their next
+     * setFilterCurve().
+     */
+    void setDacRatio(double ratio);
+
+    double getDacRatio() const { return dacRatio; }
+
+    /**
+     * Resonance strength: the resonance ladder gain (1/Q) is divided by it,
+     * so 2.0 doubles Q, 0.5 halves it (1.0 = nominal). At resonance 15 the
+     * 6581 ladder gain is zero, so there the op-amp gain is what counts.
+     * Rebuilds the resonance table (shared by all 6581 filters).
+     */
+    void setResonanceStrength(double strength);
+
+    /**
+     * Op-amp gain: the measured op-amp transfer curve is made steeper (> 1)
+     * or flatter (< 1) around its working point. The 6581 op-amps have low
+     * gain, which makes the integrators lossy and limits the resonance (Q
+     * about 1.75 at resonance 15), and shapes the filter distortion.
+     * Rebuilds all op-amp tables (shared by all 6581 filters): slow, call
+     * only when the value really changes.
+     */
+    void setOpampGain(double gain);
 
     inline double getWL_snake() const { return WL_snake; }
 

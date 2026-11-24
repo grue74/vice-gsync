@@ -41,7 +41,7 @@ int32_t Integrator8580::solve(int32_t vi) const
     const int32_t n_I_dac = (n_dac * (static_cast<int32_t>(Vgst_2 - Vgdt_2) >> 15)) >> 4;
 
     // Change in capacitor charge.
-    vc += n_I_dac;
+    vc += charge(n_I_dac);
 
     // vx = g(vc)
     const int32_t tmp = (vc >> 15) - INT16_MIN;

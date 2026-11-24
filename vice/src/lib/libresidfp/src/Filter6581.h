@@ -338,6 +338,7 @@ protected:
 
     void restartIntegrators() override { hpIntegrator.restart(); bpIntegrator.restart(); }
 
+
     /*
      * The filter input resistors on the 6581 are slightly bigger than the voice ones,
      * scale the values accordingly.
@@ -348,6 +349,12 @@ protected:
     }
 
 public:
+    // hpIntegrator turns Vhp into Vbp (CAP2), bpIntegrator Vbp into Vlp (CAP1)
+    void setCapacitors(double c1, double c2) override { hpIntegrator.setCapacitor(c2); bpIntegrator.setCapacitor(c1); }
+
+    /// Scale the snake W/L of both integrators (1.0 = nominal)
+    void setSnakeScale(double scale) { hpIntegrator.setSnakeScale(scale); bpIntegrator.setSnakeScale(scale); }
+
     Filter6581() :
         Filter(*FilterModelConfig6581::getInstance(), hpIntegrator, bpIntegrator),
         hpIntegrator(*FilterModelConfig6581::getInstance()),

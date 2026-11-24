@@ -392,6 +392,45 @@ public:
     void set6581caps(CapsType type);
 
     /**
+     * Set the two external filter capacitors of this chip relative to their
+     * nominal value (1.0 = nominal), for both models. Real boards use 10 %
+     * parts, so C1 and C2 are rarely a matched pair: their product moves the
+     * cutoff, their ratio the resonance. Cheap; can be changed while playing.
+     *
+     * @param c1 CAP1A/B (lowpass integrator)
+     * @param c2 CAP2A/B (bandpass integrator)
+     */
+    void setFilterCapacitors(double c1, double c2);
+
+    /**
+     * Set the 2R/R ratio of the 6581 cutoff DAC (default 2.20, 2.00 = ideal)
+     * and rebuild this chip's cutoff table. The DAC model is shared by all
+     * 6581 filters; call this for each chip.
+     */
+    void setFilter6581DacRatio(double ratio);
+
+    /**
+     * Scale the 6581 snake resistor W/L (1.0 = nominal 1/115; larger = lower
+     * resistance = higher floor of the cutoff curve). Per chip, cheap, can be
+     * changed while playing.
+     */
+    void setFilter6581SnakeScale(double scale);
+
+    /**
+     * Resonance strength for both models (1.0 = nominal, 2.0 = double Q).
+     * Shared by all chips; rebuilds a table, call only on a change.
+     */
+    void setFilterResonanceStrength(double strength);
+
+    /**
+     * 6581 op-amp gain around the working point (1.0 = measured curve).
+     * Higher means less integrator loss: more resonance, especially at
+     * resonance 15, and a different distortion. Shared by all chips; rebuilds
+     * all op-amp tables (slow), call only on a change.
+     */
+    void setFilter6581OpampGain(double gain);
+
+    /**
      * Set strong P+S for 6581 model.
      */
     void enableStrongPS(bool enable);

@@ -156,8 +156,14 @@ SID::SID() :
     offset_6581(OFFSET_6581),
     cws(AVERAGE),
     dacLeakage(1.0),
-    p(new Params)
+    p(new Params())
 {
+    // defaults for the stored filter parameters (read by setFilter6581DacRatio)
+    p->filterCurve6581 = 0.5;
+    p->filterRange6581 = 0.5;
+    p->filterCurve8580 = 0.5;
+    p->caps6581 = CAPS470;
+
     voice[0].setOtherVoices(voice[2], voice[1]);
     voice[1].setOtherVoices(voice[0], voice[2]);
     voice[2].setOtherVoices(voice[1], voice[0]);
@@ -642,6 +648,34 @@ void SID::set6581caps(CapsType type)
 {
     p->caps6581 = type;
     filter6581->setCaps(type);
+}
+
+void SID::setFilter6581DacRatio(double ratio)
+{
+    FilterModelConfig6581::getInstance()->setDacRatio(ratio);
+    filter6581->setFilterCurve(p->filterCurve6581);
+}
+
+void SID::setFilterResonanceStrength(double strength)
+{
+    FilterModelConfig6581::getInstance()->setResonanceStrength(strength);
+    FilterModelConfig8580::getInstance()->setResonanceStrength(strength);
+}
+
+void SID::setFilter6581OpampGain(double gain)
+{
+    FilterModelConfig6581::getInstance()->setOpampGain(gain);
+}
+
+void SID::setFilter6581SnakeScale(double scale)
+{
+    filter6581->setSnakeScale(scale);
+}
+
+void SID::setFilterCapacitors(double c1, double c2)
+{
+    filter6581->setCapacitors(c1, c2);
+    filter8580->setCapacitors(c1, c2);
 }
 
 void SID::enableStrongPS(bool enable)

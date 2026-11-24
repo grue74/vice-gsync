@@ -45,6 +45,9 @@
 #include "resources.h"
 #include "sid-resources.h"
 #include "sid.h"
+#if defined(HAVE_RESIDFP)
+#include "residfp.h"
+#endif
 #include "sound.h"
 #include "types.h"
 
@@ -86,6 +89,12 @@ static int sid_residfp_6581_filter_curve;
 static int sid_residfp_6581_filter_range;
 static int sid_residfp_8580_filter_curve;
 static int sid_residfp_combined_waveform_strength;
+static int sid_residfp_filter_c1;
+static int sid_residfp_filter_c2;
+static int sid_residfp_6581_dac_ratio;
+static int sid_residfp_6581_snake;
+static int sid_residfp_resonance_strength;
+static int sid_residfp_6581_opamp_gain;
 #endif
 int sid_stereo = 0;
 int checking_sid_stereo;
@@ -474,6 +483,76 @@ static int set_sid_residfp_combined_waveform_strength(int i, void *param)
     return 0;
 }
 
+/* C1/C2 filter capacitor deviation: applied live, no SID re-init */
+static int set_sid_residfp_filter_cap(int val, void *param)
+{
+    if (val < RESIDFP_FILTER_CAP_MIN) {
+        val = RESIDFP_FILTER_CAP_MIN;
+    } else if (val > RESIDFP_FILTER_CAP_MAX) {
+        val = RESIDFP_FILTER_CAP_MAX;
+    }
+
+    if (vice_ptr_to_int(param) == 1) {
+        sid_residfp_filter_c1 = val;
+    } else {
+        sid_residfp_filter_c2 = val;
+    }
+    residfp_set_filter_caps(sid_residfp_filter_c1, sid_residfp_filter_c2);
+    return 0;
+}
+
+/* 6581 cutoff DAC 2R/R ratio: applied live, no SID re-init */
+static int set_sid_residfp_6581_dac_ratio(int val, void *param)
+{
+    if (val < RESIDFP_6581_DAC_RATIO_MIN) {
+        val = RESIDFP_6581_DAC_RATIO_MIN;
+    } else if (val > RESIDFP_6581_DAC_RATIO_MAX) {
+        val = RESIDFP_6581_DAC_RATIO_MAX;
+    }
+    sid_residfp_6581_dac_ratio = val;
+    residfp_set_dac_ratio(val);
+    return 0;
+}
+
+/* 6581 snake resistor W/L scale: applied live, no SID re-init */
+static int set_sid_residfp_6581_snake(int val, void *param)
+{
+    if (val < RESIDFP_6581_SNAKE_MIN) {
+        val = RESIDFP_6581_SNAKE_MIN;
+    } else if (val > RESIDFP_6581_SNAKE_MAX) {
+        val = RESIDFP_6581_SNAKE_MAX;
+    }
+    sid_residfp_6581_snake = val;
+    residfp_set_snake_scale(val);
+    return 0;
+}
+
+/* resonance strength (both models): applied live */
+static int set_sid_residfp_resonance_strength(int val, void *param)
+{
+    if (val < RESIDFP_RESONANCE_STRENGTH_MIN) {
+        val = RESIDFP_RESONANCE_STRENGTH_MIN;
+    } else if (val > RESIDFP_RESONANCE_STRENGTH_MAX) {
+        val = RESIDFP_RESONANCE_STRENGTH_MAX;
+    }
+    sid_residfp_resonance_strength = val;
+    residfp_set_resonance_strength(val);
+    return 0;
+}
+
+/* 6581 op-amp gain: applied live */
+static int set_sid_residfp_6581_opamp_gain(int val, void *param)
+{
+    if (val < RESIDFP_6581_OPAMP_GAIN_MIN) {
+        val = RESIDFP_6581_OPAMP_GAIN_MIN;
+    } else if (val > RESIDFP_6581_OPAMP_GAIN_MAX) {
+        val = RESIDFP_6581_OPAMP_GAIN_MAX;
+    }
+    sid_residfp_6581_opamp_gain = val;
+    residfp_set_opamp_gain(val);
+    return 0;
+}
+
 static int set_sid_residfp_6581_old_caps(int val, void *param)
 {
     sid_residfp_6581_old_caps = val ? 1 : 0;
@@ -604,6 +683,18 @@ static const resource_int_t residfp_resources_int[] = {
       &sid_residfp_8580_filter_curve, set_sid_residfp_8580_filter_curve, NULL },
     { "SidResidCombinedWaveformStrength", RESIDFP_COMBINED_WAVEFORM_STRENGTH_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_combined_waveform_strength, set_sid_residfp_combined_waveform_strength, NULL },
+    { "SidResidFilterC1", RESIDFP_FILTER_CAP_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_filter_c1, set_sid_residfp_filter_cap, (void *)1 },
+    { "SidResidFilterC2", RESIDFP_FILTER_CAP_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_filter_c2, set_sid_residfp_filter_cap, (void *)2 },
+    { "SidResid6581DacRatio", RESIDFP_6581_DAC_RATIO_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_dac_ratio, set_sid_residfp_6581_dac_ratio, NULL },
+    { "SidResid6581Snake", RESIDFP_6581_SNAKE_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_snake, set_sid_residfp_6581_snake, NULL },
+    { "SidResidResonanceStrength", RESIDFP_RESONANCE_STRENGTH_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_resonance_strength, set_sid_residfp_resonance_strength, NULL },
+    { "SidResid6581OpampGain", RESIDFP_6581_OPAMP_GAIN_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_opamp_gain, set_sid_residfp_6581_opamp_gain, NULL },
     RESOURCE_INT_LIST_END
 };
 #endif
