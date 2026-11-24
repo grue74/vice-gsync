@@ -259,6 +259,15 @@ void sound_close(void);
 bool sound_not_sensible_speed_to_play(void);
 void sound_set_relative_speed(int value);
 void sound_set_warp_mode(int value);
+
+/* Recording limit (VSID tune export): the next recording stops after
+   total_seconds of output, the last fade_seconds faded out (recording only,
+   sample exact). 0 = no limit. */
+void sound_record_limit(double total_seconds, double fade_seconds);
+/* 1 once the limited recording has reached its length */
+int sound_record_limit_reached(void);
+/* seconds written to the limited recording so far */
+double sound_record_limit_written(void);
 void sound_set_machine_parameter(long clock_rate, long ticks_per_frame);
 void sound_snapshot_prepare(void);
 void sound_snapshot_finish(void);

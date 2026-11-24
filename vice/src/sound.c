@@ -537,6 +537,15 @@ static int playback_enabled = 0;       /* app_resources.sound */
 static int sample_rate;                /* app_resources.soundSampleRate */
 static char *device_name = NULL;       /* app_resources.soundDeviceName */
 static char *device_arg = NULL;        /* app_resources.soundDeviceArg */
+/* Recording limit (VSID tune export): total length and fade-out, in seconds;
+   frames written so far; set once the length is reached. */
+static volatile double rec_limit_seconds = 0.0;
+static volatile double rec_fade_seconds = 0.0;
+static volatile long rec_limit_written = 0;
+static volatile int rec_limit_done = 0;
+static int16_t *rec_fade_buffer = NULL;
+static int rec_fade_buffer_size = 0;
+
 static char *recorddevice_name = NULL; /* app_resources.soundDeviceName */
 static char *recorddevice_arg = NULL;  /* app_resources.soundDeviceArg */
 static int buffer_size;                /* app_resources.soundBufferSize */
@@ -1490,6 +1499,86 @@ void sound_reset(void)
     }
 }
 
+/* ------------------------------------------------------------------------- */
+/* Recording limit (VSID tune export) */
+
+void sound_record_limit(double total_seconds, double fade_seconds)
+{
+    rec_limit_written = 0;
+    rec_limit_done = 0;
+    rec_fade_seconds = (fade_seconds > 0.0 && fade_seconds < total_seconds) ? fade_seconds : 0.0;
+    rec_limit_seconds = total_seconds > 0.0 ? total_seconds : 0.0;
+}
+
+int sound_record_limit_reached(void)
+{
+    return rec_limit_done;
+}
+
+double sound_record_limit_written(void)
+{
+    return sample_rate > 0 ? (double)rec_limit_written / sample_rate : 0.0;
+}
+
+/* Write nsamples (frames * channels) to the recording device, honouring the
+   recording limit: stop at the length, fade out the last part. */
+static int record_write(int16_t *buffer, int nsamples)
+{
+    int channels = snddata.sound_output_channels;
+    long total;
+    long fade;
+    long frames;
+    long i;
+    int16_t *out = buffer;
+    int result;
+
+    if (rec_limit_seconds <= 0.0 || sample_rate <= 0) {
+        return snddata.recdev->write(buffer, nsamples);
+    }
+    if (rec_limit_done) {
+        return 0;
+    }
+
+    total = (long)(rec_limit_seconds * sample_rate + 0.5);
+    fade = (long)(rec_fade_seconds * sample_rate + 0.5);
+    frames = nsamples / channels;
+    if (rec_limit_written + frames >= total) {
+        frames = total - rec_limit_written;
+        if (frames < 0) {
+            frames = 0;
+        }
+    }
+
+    if (fade > 0 && rec_limit_written + frames > total - fade) {
+        /* fade out (on a copy: the playback device gets the original) */
+        if (rec_fade_buffer_size < frames * channels) {
+            rec_fade_buffer_size = (int)(frames * channels);
+            rec_fade_buffer = lib_realloc(rec_fade_buffer, rec_fade_buffer_size * sizeof(int16_t));
+        }
+        for (i = 0; i < frames; i++) {
+            long pos = rec_limit_written + i;
+            double gain = 1.0;
+            int c;
+
+            if (pos >= total - fade) {
+                gain = (double)(total - pos) / (double)fade;
+                gain = gain * gain;     /* smoother towards silence */
+            }
+            for (c = 0; c < channels; c++) {
+                rec_fade_buffer[i * channels + c] = (int16_t)(buffer[i * channels + c] * gain);
+            }
+        }
+        out = rec_fade_buffer;
+    }
+
+    result = frames > 0 ? snddata.recdev->write(out, (int)(frames * channels)) : 0;
+    rec_limit_written += frames;
+    if (rec_limit_written >= total) {
+        rec_limit_done = 1;
+    }
+    return result;
+}
+
 /* flush all generated samples from buffer to sounddevice. */
 bool sound_flush(void)
 {
@@ -1608,7 +1697,7 @@ bool sound_flush(void)
             goto done;
         }
         if (snddata.recdev
-            && snddata.recdev->write(snddata.buffer, nr * snddata.sound_output_channels)) {
+            && record_write(snddata.buffer, nr * snddata.sound_output_channels)) {
             sound_error("write to sound device failed.");
             goto done;
         }
@@ -1642,7 +1731,7 @@ bool sound_flush(void)
             }
 
             if (snddata.recdev) {
-                if (snddata.recdev->write(snddata.buffer, nr * snddata.sound_output_channels)) {
+                if (record_write(snddata.buffer, nr * snddata.sound_output_channels)) {
                     sound_error("write to sound device failed.");
 
                     mainlock_yield_end();
