@@ -116,13 +116,15 @@ constexpr Spline::Point opamp_voltage[OPAMP_SIZE] =
 
 std::unique_ptr<FilterModelConfig8580> FilterModelConfig8580::instance(nullptr);
 
-std::once_flag flag8580;
-
 FilterModelConfig8580* FilterModelConfig8580::getInstance()
 {
-    std::call_once(flag8580, [](){ instance.reset(new FilterModelConfig8580()); });
+    // A function-local static is initialised exactly once, thread safely
+    // (C++11). Not std::call_once: on MinGW it calls through a null pointer
+    // in profile-instrumented (PGO) builds.
+    static FilterModelConfig8580* const config =
+        (instance.reset(new FilterModelConfig8580()), instance.get());
 
-    return instance.get();
+    return config;
 }
 
 FilterModelConfig8580::FilterModelConfig8580() :

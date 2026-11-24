@@ -89,13 +89,15 @@ constexpr double CAPS_GALWAY =  330e-12; // Non-standard 330pF caps
 
 std::unique_ptr<FilterModelConfig6581> FilterModelConfig6581::instance(nullptr);
 
-std::once_flag flag6581;
-
 FilterModelConfig6581* FilterModelConfig6581::getInstance()
 {
-    std::call_once(flag6581, [](){ instance.reset(new FilterModelConfig6581()); });
+    // A function-local static is initialised exactly once, thread safely
+    // (C++11). Not std::call_once: on MinGW it calls through a null pointer
+    // in profile-instrumented (PGO) builds.
+    static FilterModelConfig6581* const config =
+        (instance.reset(new FilterModelConfig6581()), instance.get());
 
-    return instance.get();
+    return config;
 }
 
 void FilterModelConfig6581::setFilterRange(double adjustment)
