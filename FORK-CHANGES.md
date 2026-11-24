@@ -202,3 +202,149 @@ headless UI. vcpkg provides the dependencies, and every download is pinned
 by hash. `src/arch/headless/videoarch.h` no longer has an empty struct
 (that's a GCC extension that MSVC rejects). See `vice/build/msvc/README.md`
 for requirements, presets and options.
+
+---
+
+## 6. reSIDfp: mismatched filter capacitors C1/C2
+
+Files: `src/lib/libresidfp/src/Integrator.h`, `Integrator6581.cpp`,
+`Integrator8580.cpp`, `Filter.h`, `Filter6581.h`, `Filter8580.h`, `SID.cpp/.h`,
+`src/sid/residfp.cc/.h`, `src/sid/sid-resources.c`,
+`src/sid/sid-cmdline-options.c`, `src/sid/sid.h`,
+`src/arch/gtk3/widgets/sidsoundwidget.c`, `src/arch/gtk3/widgets/mixerwidget.c`,
+`src/arch/gtk3/widgets/vsidmixerwidget.c`
+
+**Why:** the SID filter integrates on two external capacitor pairs: C1
+(CAP1A/B, lowpass integrator) and C2 (CAP2A/B, bandpass integrator). The
+datasheet assumes a matched pair, but Commodore fitted 10 % ceramics (470 pF on
+6581 boards, 22 nF on 8580 boards), so real boards differ. Both reSID and
+reSIDfp used one value for both capacitors.
+
+**What:**
+
+- Each reSIDfp integrator has its own capacitor value: the charge it adds per
+  cycle is scaled by 1/C (`Integrator::setCapacitor`, `charge()`).
+  `SID::setFilterCapacitors(c1, c2)` sets both, for the 6581 and the 8580.
+- In the linear model the cutoff goes with 1/sqrt(C1*C2) and Q with
+  sqrt(C2/C1). With 10 % parts: up to about ±10 % cutoff (both caps off the
+  same way) and ±10 % Q (opposite ways).
+- **Live:** a change only bumps a counter; each chip picks the new values up
+  before its next sound buffer. No SID re-init, so it can be changed while a
+  tune plays.
+- Resources `SidResidFilterC1`, `SidResidFilterC2`: deviation from nominal in
+  0.1 % (-200..200 = ±20 %), for all reSIDfp chips. Options `-residfilterc1`,
+  `-residfilterc2`.
+- GTK3: Settings > Audio > SID, block "ReSIDfp filter capacitors C1/C2": a
+  slider and an exact value per cap, a reset button, and presets **Random
+  board** (two 10 % parts, normal distribution with the tolerance at 2 sigma),
+  **Most resonance** (C1 -10 %, C2 +10 %), **Least resonance** and **Matched
+  pair**.
+- The mixer under the emulated screen (status bar) has C1 and C2 sliders too,
+  shown when reSIDfp is the engine; its Reset button sets a matched pair.
+- VSID's main window has a full SID panel in place of its three-slider mixer:
+  engine and model, filter on/off, every filter slider of the current engine
+  and model (reSID passband/gain/bias; reSIDfp curve, range, combined
+  waveforms, old 2200 pF caps), C1 and C2 with the four presets, and "Reset
+  sliders to defaults". It rebuilds itself when the engine or model changes.
+- **6581 DAC kink:** the 6581 cutoff DAC is an R-2R ladder with a 2R/R ratio
+  of 2.20 (not 2.00) and no termination, so the cutoff drops at the FC bit
+  carries (255/256, 511/512, 1023/1024). Resource `SidResid6581DacRatio`
+  (x1000, 1900..2600, default 2200; option `-resid6581dacratio`), applied
+  live, with a "DAC kink (2R/R)" slider on the VSID panel, on the
+  Settings > Audio > SID page (reSIDfp 6581 block) and in the status-bar
+  mixer (reSIDfp, 6581 only; Reset sets 2.200). Measured at FC
+  1016 -> 1024 (filter curve 0.25): 2.00 smooth (+1.7 %), 2.20 -12 %,
+  2.40 -24 %. Library: `Dac::kinkedDac(..., ratio2R)`,
+  `FilterModelConfig6581::setDacRatio`, `SID::setFilter6581DacRatio`; the
+  SID filter parameters are now initialised (`new Params()`).
+- **6581 snake resistor:** the long "snake" transistor beside each integrator's
+  cutoff transistor (W/L 1/115, about 0.9 MOhm) carries the current when the
+  cutoff transistor is nearly off, so it sets the floor of the cutoff curve.
+  Resource `SidResid6581Snake` (W/L scale x1000, 250..4000, default 1000;
+  option `-resid6581snake`), per chip, applied live; "Snake resistor" slider
+  on the VSID panel. Measured (default curve): x0.5 / x1 / x2 / x4 give
+  181 / 322 / 600 / 1113 Hz at FC 0 and 16.1 / 16.2 / 16.4 / 16.8 kHz at
+  FC 1920. Library: `Integrator6581::setSnakeScale`,
+  `SID::setFilter6581SnakeScale`.
+- **Resonance strength** (both models): the resonance ladder gain (1/Q) is
+  divided by it. Resource `SidResidResonanceStrength` (x1000, 250..4000,
+  default 1000; option `-residresonancestrength`). Measured: 8580 Q scales
+  exactly (x0.5 / x2: 2.58 -> 1.28 / 5.05 at resonance 15); 6581 Q x1.33 at
+  resonance 10 for x2, no effect at resonance 15 (the 6581 ladder gain is
+  zero there).
+- **6581 op-amp gain**: the measured op-amp curve is made steeper or flatter
+  around its working point (4.54 V; end points kept). The 6581's low op-amp
+  gain makes the integrators lossy and limits Q (about 1.75 at resonance 15).
+  Resource `SidResid6581OpampGain` (x1000, 500..2500, default 1000; option
+  `-resid6581opampgain`). Measured at resonance 15: x1.5 / x2 give Q 2.24 /
+  2.49 and a peak about 4 dB higher, but the cutoff also roughly doubles at
+  x2; above about x2.5 the peak drops again.
+- Both rebuild tables shared by all chips of a model (about 50 ms), so VICE
+  applies them on the sound side once the value has been still for 0.2 s.
+  Library: `FilterModelConfig6581/8580::setResonanceStrength`,
+  `FilterModelConfig6581::setOpampGain` (with `buildOpampRev` split out of
+  the base constructor), `SID::setFilterResonanceStrength`,
+  `SID::setFilter6581OpampGain`. Sliders on the VSID panel.
+- **Own filter settings** ("My settings" on the VSID panel, "My filter
+  settings" on Settings > Audio > SID): save every filter value (reSID and
+  reSIDfp sliders, C1/C2, DAC ratio, snake, resonance strength, op-amp gain,
+  combined waveforms, old caps, filter on/off; not the engine or model) under
+  a name, load it by choosing it from the list, delete it. Both places share
+  one list, stored in `sidfilter-presets.txt` in the VICE configuration
+  directory, one line per preset (`widgets/sidfilterpresets.c`).
+
+**Measured** (voice 3 white noise through the lowpass at resonance 15,
+recorded to wav, 2-pole fit of the spectrum; repeat runs agree within 0.2 %):
+
+| Setting                | 8580 f0 | 8580 Q | 6581 f0 loud | 6581 Q loud | 6581 f0 quiet | 6581 Q quiet |
+|------------------------|---------|--------|--------------|-------------|---------------|--------------|
+| matched (nominal)      | 3817 Hz | 2.36   | 2026 Hz      | 1.99        | 1268 Hz       | 2.17         |
+| both +10 %             | x0.905  | x1.02  | x0.924       | x1.05       | x0.919        | x1.09        |
+| C1 -10 %, C2 +10 %     | x1.012  | x1.11  | x0.984       | x1.05       | x1.008        | x1.02        |
+| C1 +10 %, C2 -10 %     | x0.997  | x0.90  | x1.025       | x0.98       | x1.004        | x0.96        |
+
+(6581: FC 450; "loud" is sustain 15, "quiet" sustain 3.)
+
+The 8580 follows the linear model (cutoff x0.909, Q x1.105 / x0.905). On the
+6581 the cutoff follows C1*C2 too, but the resonance doesn't separate cleanly:
+the 6581's response shape depends on the cutoff frequency and the signal level
+(the 2-pole fit is only an approximation for it), so even matched caps change
+the fitted Q, and the mismatch's own effect on Q is smaller, about ±2-4 %
+instead of ±10 %. A change while playing gave the same result as a fresh start,
+with no gap or click in the output.
+
+The settings apply to every reSIDfp chip (multi-SID setups share them); reSID
+is unchanged.
+
+---
+
+## 7. VSID: export tunes to MP3, FLAC, Ogg Vorbis or WAV
+
+Files: `src/arch/gtk3/vsidexport.c/.h` (new), `src/arch/gtk3/Makefile.am`,
+`src/arch/gtk3/widgets/vsidmixerwidget.c/.h`,
+`src/arch/gtk3/widgets/vsidmainwidget.c`, `src/sound.c/.h`
+
+**Why:** to save tunes as audio files from VSID, with the fork's SID and
+filter settings. VSID's sound recording menu entries were disabled
+(`#if 0` in `uivsidmenu.c`), and the build had no MP3 encoder.
+
+**What:**
+
+- "Export tune..." button on the VSID SID panel opens a dialog: file name
+  (the format follows the extension), format (MP3 128 kbit/s, FLAC, Ogg
+  Vorbis, WAV), current subtune or all of them (`name-01.mp3`, ...), length
+  from the HVSC song length database or a fixed time, fade-out, and fast
+  export (warp: silent, much faster than real time). A progress bar and a
+  Cancel button; closing the dialog lets the export finish.
+- `sound.c`: a recording limit, `sound_record_limit(seconds, fade)`: the
+  recording stops after exactly that many samples, and the last part is
+  faded out (on a copy, so only the file fades). The export restarts each
+  subtune, records it through the normal recording device
+  (`SoundRecordDeviceName/Arg`), and moves on when the limit is reached.
+- The panel gets the export function through
+  `vsid_mixer_widget_set_export_handler()`, set by `vsidmainwidget.c`,
+  because the panel's code is also linked into the other emulators, which
+  have no PSID player.
+- **Build:** MP3 needs LAME. On MSYS2: `pacman -S mingw-w64-x86_64-lame`,
+  then configure with `--with-lame --with-static-lame --with-flac
+  --with-vorbis` (static LAME: no extra DLL in the release).
