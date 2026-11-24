@@ -48,6 +48,9 @@
  * $VICERES SidResidFilterC1            all
  * $VICERES SidResidFilterC2            all
  * $VICERES SidResid6581DacRatio        all
+ * $VICERES SidResid6581Snake           all
+ * $VICERES SidResid6581OpampGain       all
+ * $VICERES SidResidResonanceStrength   all
  *
  * These are related to USBSID
  * $VICERES SidUSBSIDReadMode           all
@@ -187,6 +190,14 @@ static const slider_t fp_sliders_6581[] = {
       (double)RESIDFP_6581_DAC_RATIO_MIN / RESIDFP_6581_DAC_RATIO_ONE,
       (double)RESIDFP_6581_DAC_RATIO_MAX / RESIDFP_6581_DAC_RATIO_ONE,
       RESIDFP_6581_DAC_RATIO_MIN, RESIDFP_6581_DAC_RATIO_MAX, 0.005f },
+    { "6581 snake resistor", "SidResid6581Snake",           "\xc3\x97%1.2f",
+      (double)RESIDFP_6581_SNAKE_MIN / RESIDFP_6581_SNAKE_ONE,
+      (double)RESIDFP_6581_SNAKE_MAX / RESIDFP_6581_SNAKE_ONE,
+      RESIDFP_6581_SNAKE_MIN, RESIDFP_6581_SNAKE_MAX, 0.01f },
+    { "6581 op-amp gain", "SidResid6581OpampGain",          "\xc3\x97%1.2f",
+      (double)RESIDFP_6581_OPAMP_GAIN_MIN / RESIDFP_6581_OPAMP_GAIN_ONE,
+      (double)RESIDFP_6581_OPAMP_GAIN_MAX / RESIDFP_6581_OPAMP_GAIN_ONE,
+      RESIDFP_6581_OPAMP_GAIN_MIN, RESIDFP_6581_OPAMP_GAIN_MAX, 0.01f },
     { NULL,            NULL,                     NULL,          0,    0, 0,    0, 0 }
 };
 
@@ -208,6 +219,11 @@ static const slider_t fp_sliders_common[] = {
       RESIDFP_COMBINED_WAVEFORM_STRENGTH_MIN / RESIDFP_COMBINED_WAVEFORM_STRENGTH_ONE,
       RESIDFP_COMBINED_WAVEFORM_STRENGTH_MAX / RESIDFP_COMBINED_WAVEFORM_STRENGTH_ONE,
       RESIDFP_COMBINED_WAVEFORM_STRENGTH_MIN, RESIDFP_COMBINED_WAVEFORM_STRENGTH_MAX, 1.00f },
+    { "Resonance strength", "SidResidResonanceStrength",
+      "\xc3\x97%1.2f",
+      (double)RESIDFP_RESONANCE_STRENGTH_MIN / RESIDFP_RESONANCE_STRENGTH_ONE,
+      (double)RESIDFP_RESONANCE_STRENGTH_MAX / RESIDFP_RESONANCE_STRENGTH_ONE,
+      RESIDFP_RESONANCE_STRENGTH_MIN, RESIDFP_RESONANCE_STRENGTH_MAX, 0.01f },
     { NULL,            NULL,                     NULL,          0,    0,0,    0,  0 }
 };
 
@@ -1038,7 +1054,7 @@ static GtkWidget *create_residfp_caps_widget(void)
     label = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(label),
             "<small>Deviation from the nominal value (470 pF on 6581, 22 nF on 8580 boards;"
-            " Commodore used 10 % parts). C1Ã" "C2 moves the cutoff, C2/C1 the resonance."
+            " Commodore used 10 % parts). C1\xc3\x97" "C2 moves the cutoff, C2/C1 the resonance."
             " Applies while playing.</small>");
     gtk_label_set_xalign(GTK_LABEL(label), 0.0);
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);

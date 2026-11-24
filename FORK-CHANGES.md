@@ -284,7 +284,10 @@ reSIDfp used one value for both capacitors.
   Library: `FilterModelConfig6581/8580::setResonanceStrength`,
   `FilterModelConfig6581::setOpampGain` (with `buildOpampRev` split out of
   the base constructor), `SID::setFilterResonanceStrength`,
-  `SID::setFilter6581OpampGain`. Sliders on the VSID panel.
+  `SID::setFilter6581OpampGain`. Sliders for the snake, resonance strength
+  and op-amp gain on the VSID panel, on Settings > Audio > SID (6581 block:
+  snake, op-amp gain; both models: resonance strength) and in the status-bar
+  mixer (reSIDfp only; the 6581 ones only with a 6581).
 - **Own filter settings** ("My settings" on the VSID panel, "My filter
   settings" on Settings > Audio > SID): save every filter value (reSID and
   reSIDfp sliders, C1/C2, DAC ratio, snake, resonance strength, op-amp gain,

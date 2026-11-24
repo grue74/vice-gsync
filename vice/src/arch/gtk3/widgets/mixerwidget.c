@@ -20,6 +20,9 @@
  * $VICERES SidResidFilterC1        -vsid
  * $VICERES SidResidFilterC2        -vsid
  * $VICERES SidResid6581DacRatio    -vsid
+ * $VICERES SidResid6581Snake       -vsid
+ * $VICERES SidResid6581OpampGain   -vsid
+ * $VICERES SidResidResonanceStrength -vsid
  */
 
 /*
@@ -156,6 +159,16 @@ static GtkWidget *curve6581;
 static GtkWidget *dac6581;
 static GtkWidget *dac6581label;
 
+/** \brief  ReSIDfp 6581 snake resistor and op-amp gain sliders and labels */
+static GtkWidget *snake6581;
+static GtkWidget *snake6581label;
+static GtkWidget *opamp6581;
+static GtkWidget *opamp6581label;
+
+/** \brief  ReSIDfp resonance strength slider and label (both models) */
+static GtkWidget *resstrength;
+static GtkWidget *resstrengthlabel;
+
 /** \brief  ReSIDfp 8580 filter curve slider */
 static GtkWidget *curve8580;
 
@@ -241,6 +254,12 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_hide(range6581);
         gtk_widget_hide(dac6581label);
         gtk_widget_hide(dac6581);
+        gtk_widget_hide(snake6581label);
+        gtk_widget_hide(snake6581);
+        gtk_widget_hide(opamp6581label);
+        gtk_widget_hide(opamp6581);
+        gtk_widget_hide(resstrengthlabel);
+        gtk_widget_hide(resstrength);
         gtk_widget_hide(curve8580label);
         gtk_widget_hide(curve8580);
         gtk_widget_hide(combinedstrengthlabel);
@@ -264,6 +283,10 @@ void mixer_widget_sid_type_changed(void)
             gtk_widget_hide(range6581);
             gtk_widget_hide(dac6581label);
             gtk_widget_hide(dac6581);
+            gtk_widget_hide(snake6581label);
+            gtk_widget_hide(snake6581);
+            gtk_widget_hide(opamp6581label);
+            gtk_widget_hide(opamp6581);
         } else {
             gtk_widget_show(curve6581label);
             gtk_widget_show(curve6581);
@@ -271,11 +294,17 @@ void mixer_widget_sid_type_changed(void)
             gtk_widget_show(range6581);
             gtk_widget_show(dac6581label);
             gtk_widget_show(dac6581);
+            gtk_widget_show(snake6581label);
+            gtk_widget_show(snake6581);
+            gtk_widget_show(opamp6581label);
+            gtk_widget_show(opamp6581);
             gtk_widget_hide(curve8580label);
             gtk_widget_hide(curve8580);
         }
         gtk_widget_show(combinedstrengthlabel);
         gtk_widget_show(combinedstrength);
+        gtk_widget_show(resstrengthlabel);
+        gtk_widget_show(resstrength);
         gtk_widget_show(capc1label);
         gtk_widget_show(capc1);
         gtk_widget_show(capc2label);
@@ -316,6 +345,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve6581, FALSE);
         gtk_widget_set_sensitive(range6581, FALSE);
         gtk_widget_set_sensitive(dac6581, FALSE);
+        gtk_widget_set_sensitive(snake6581, FALSE);
+        gtk_widget_set_sensitive(opamp6581, FALSE);
+        gtk_widget_set_sensitive(resstrength, FALSE);
         gtk_widget_set_sensitive(capc1, FALSE);
         gtk_widget_set_sensitive(capc2, FALSE);
 #endif
@@ -336,6 +368,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve6581, FALSE);
         gtk_widget_set_sensitive(range6581, FALSE);
         gtk_widget_set_sensitive(dac6581, FALSE);
+        gtk_widget_set_sensitive(snake6581, FALSE);
+        gtk_widget_set_sensitive(opamp6581, FALSE);
+        gtk_widget_set_sensitive(resstrength, FALSE);
         gtk_widget_set_sensitive(capc1, FALSE);
         gtk_widget_set_sensitive(capc2, FALSE);
 #endif
@@ -355,6 +390,9 @@ void mixer_widget_sid_type_changed(void)
         gtk_widget_set_sensitive(curve6581, TRUE);
         gtk_widget_set_sensitive(range6581, TRUE);
         gtk_widget_set_sensitive(dac6581, TRUE);
+        gtk_widget_set_sensitive(snake6581, TRUE);
+        gtk_widget_set_sensitive(opamp6581, TRUE);
+        gtk_widget_set_sensitive(resstrength, TRUE);
         gtk_widget_set_sensitive(capc1, TRUE);
         gtk_widget_set_sensitive(capc2, TRUE);
 #endif
@@ -409,8 +447,11 @@ static void on_reset_clicked(GtkWidget *widget, gpointer data)
         vice_gtk3_resource_scale_custom_factory(curve6581);
         vice_gtk3_resource_scale_custom_factory(range6581);
         vice_gtk3_resource_scale_custom_factory(dac6581);
+        vice_gtk3_resource_scale_custom_factory(snake6581);
+        vice_gtk3_resource_scale_custom_factory(opamp6581);
     }
     if (engine == SID_ENGINE_RESIDFP) {
+        vice_gtk3_resource_scale_custom_factory(resstrength);
         vice_gtk3_resource_scale_custom_factory(capc1);
         vice_gtk3_resource_scale_custom_factory(capc2);
     }
@@ -920,6 +961,34 @@ GtkWidget *mixer_widget_create(gboolean minimal, GtkAlign alignment)
     gtk_grid_attach(GTK_GRID(grid), dac6581, 1, row, 1, 1);
     row++;
 
+    snake6581label = create_label("ReSIDfp 6581 snake resistor", minimal, alignment);
+    snake6581 = create_slider("SidResid6581Snake", "\xc3\x97%1.2f",
+                              (double)RESIDFP_6581_SNAKE_MIN / RESIDFP_6581_SNAKE_ONE,
+                              (double)RESIDFP_6581_SNAKE_MAX / RESIDFP_6581_SNAKE_ONE,
+                              RESIDFP_6581_SNAKE_MIN, RESIDFP_6581_SNAKE_MAX, 0.01f, minimal);
+    gtk_widget_set_sensitive(snake6581, sid_present);
+    gtk_widget_set_tooltip_text(snake6581,
+            "Width of the 6581 snake transistor (the fixed resistor beside the cutoff"
+            " transistor), relative to nominal. Higher = higher minimum cutoff; the"
+            " top of the curve barely moves. Applies while playing.");
+    gtk_grid_attach(GTK_GRID(grid), snake6581label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), snake6581, 1, row, 1, 1);
+    row++;
+
+    opamp6581label = create_label("ReSIDfp 6581 op-amp gain", minimal, alignment);
+    opamp6581 = create_slider("SidResid6581OpampGain", "\xc3\x97%1.2f",
+                              (double)RESIDFP_6581_OPAMP_GAIN_MIN / RESIDFP_6581_OPAMP_GAIN_ONE,
+                              (double)RESIDFP_6581_OPAMP_GAIN_MAX / RESIDFP_6581_OPAMP_GAIN_ONE,
+                              RESIDFP_6581_OPAMP_GAIN_MIN, RESIDFP_6581_OPAMP_GAIN_MAX, 0.01f, minimal);
+    gtk_widget_set_sensitive(opamp6581, sid_present);
+    gtk_widget_set_tooltip_text(opamp6581,
+            "Gain of the 6581's NMOS op-amps. Higher = stronger resonance (also at"
+            " resonance 15) and a different distortion, but also a higher cutoff"
+            " (about x2 at 2.00). Applied when the slider stops moving.");
+    gtk_grid_attach(GTK_GRID(grid), opamp6581label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), opamp6581, 1, row, 1, 1);
+    row++;
+
     /*
      * 8580 ReSIDfp resources
      */
@@ -938,6 +1007,20 @@ GtkWidget *mixer_widget_create(gboolean minimal, GtkAlign alignment)
     gtk_widget_set_hexpand(combinedstrength, TRUE);
     gtk_grid_attach(GTK_GRID(grid), combinedstrengthlabel, 0, row, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), combinedstrength, 1, row, 1, 1);
+    row++;
+
+    resstrengthlabel = create_label("ReSIDfp resonance strength", minimal, alignment);
+    resstrength = create_slider("SidResidResonanceStrength", "\xc3\x97%1.2f",
+                                (double)RESIDFP_RESONANCE_STRENGTH_MIN / RESIDFP_RESONANCE_STRENGTH_ONE,
+                                (double)RESIDFP_RESONANCE_STRENGTH_MAX / RESIDFP_RESONANCE_STRENGTH_ONE,
+                                RESIDFP_RESONANCE_STRENGTH_MIN, RESIDFP_RESONANCE_STRENGTH_MAX,
+                                0.01f, minimal);
+    gtk_widget_set_sensitive(resstrength, sid_present);
+    gtk_widget_set_tooltip_text(resstrength,
+            "Multiplies the filter's Q (x2.00 = double). Fully on the 8580; on the"
+            " 6581 below resonance 15. Applied when the slider stops moving.");
+    gtk_grid_attach(GTK_GRID(grid), resstrengthlabel, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), resstrength, 1, row, 1, 1);
     row++;
 
     /* filter capacitors, both models: C1*C2 moves the cutoff, C2/C1 the resonance */
