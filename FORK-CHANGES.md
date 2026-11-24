@@ -134,7 +134,7 @@ results vary by about 1 % from run to run):
 | Speed               | x64sc  | x64   |
 |---------------------|--------|-------|
 | off                 | 110-111 | 110-111 |
-| 4 MHz               | 447    | 448   |
+| 4 MHz               | 443    | 448   |
 | 20 MHz (registers)  | 2304-2341 | 2319 |
 | 48 MHz              | 5508-5594 | 5577 |
 | 48 MHz, badlines off| 5886   | 5893  |
