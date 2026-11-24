@@ -635,6 +635,20 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
     int key = report->key.keyval;
     int mod = 0;
 
+    /* A text field (entry, spin button) in the window has the focus, e.g. the
+       preset name on the VSID SID panel: let it have the key first, so typing
+       doesn't trigger hotkeys (VSID: P = pause) or reach the emulated keyboard.
+       Keys the field doesn't use (Alt-combinations, function keys) go on. */
+    if ((report->type == GDK_KEY_PRESS || report->type == GDK_KEY_RELEASE)
+            && GTK_IS_WINDOW(w)) {
+        GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(w));
+
+        if (focus != NULL && GTK_IS_EDITABLE(focus)
+                && gtk_window_propagate_key_event(GTK_WINDOW(w), (GdkEventKey *)report)) {
+            return TRUE;
+        }
+    }
+
     switch (report->type) {
         case GDK_KEY_PRESS:
             /* Swallow repeats of keys still held from the monitor. */

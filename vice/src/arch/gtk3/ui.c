@@ -1760,6 +1760,30 @@ static gboolean rendering_area_event_handler(GtkWidget *canvas,
     return FALSE;
 }
 
+/** \brief  Handler for the 'key-press-event' of the VSID window
+ *
+ * VSID binds its hotkeys (P = pause and so on) as accelerators, and GtkWindow
+ * activates accelerators before the focused widget gets the key. When a text
+ * field has the focus (the preset name on the SID panel), give it the key
+ * first; keys it doesn't use go on to the accelerators.
+ *
+ * \param[in]   window  VSID window
+ * \param[in]   event   key event
+ * \param[in]   data    unused
+ *
+ * \return  TRUE if the text field took the key
+ */
+static gboolean on_vsid_key_press_event(GtkWidget *window, GdkEventKey *event, gpointer data)
+{
+    GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(window));
+
+    if (focus != NULL && GTK_IS_EDITABLE(focus)) {
+        return gtk_window_propagate_key_event(GTK_WINDOW(window), event);
+    }
+    return FALSE;
+}
+
+
 /** \brief  Set window geomeotry of a window by index from resources
  *
  * \param[in]   index   window index (\c PRIMARY_WINDOW or \c SECONDARY_WINDOW)
@@ -1982,6 +2006,11 @@ void ui_create_main_window(video_canvas_t *canvas)
     /* Connect keyboard handlers, except for VSID */
     if (machine_class != VICE_MACHINE_VSID) {
         kbd_connect_handlers(new_window, NULL);
+    } else {
+        /* VSID's hotkeys are plain accelerators, which GtkWindow tries before
+           the focused widget: let a focused text field have the key first */
+        g_signal_connect(new_window, "key-press-event",
+                         G_CALLBACK(on_vsid_key_press_event), NULL);
     }
 
     /*
