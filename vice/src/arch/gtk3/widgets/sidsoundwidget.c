@@ -51,6 +51,7 @@
  * $VICERES SidResid6581Snake           all
  * $VICERES SidResid6581OpampGain       all
  * $VICERES SidResid6581ResonanceQ      all
+ * $VICERES SidResid6581WaveOffset      all
  * $VICERES SidResidResonanceStrength   all
  *
  * These are related to USBSID
@@ -95,6 +96,7 @@
 #include "vice_gtk3.h"
 
 #include "sidfilterpresets.h"
+#include "sidcurvewidget.h"
 #include "sidsoundwidget.h"
 
 
@@ -203,6 +205,9 @@ static const slider_t fp_sliders_6581[] = {
       (double)RESIDFP_6581_RESONANCE_Q_MIN / RESIDFP_6581_RESONANCE_Q_ONE,
       (double)RESIDFP_6581_RESONANCE_Q_MAX / RESIDFP_6581_RESONANCE_Q_ONE,
       RESIDFP_6581_RESONANCE_Q_MIN, RESIDFP_6581_RESONANCE_Q_MAX, 0.01f },
+    { "6581 wave offset", "SidResid6581WaveOffset",          "%.0f",
+      RESIDFP_6581_WAVE_OFFSET_MIN, RESIDFP_6581_WAVE_OFFSET_MAX,
+      RESIDFP_6581_WAVE_OFFSET_MIN, RESIDFP_6581_WAVE_OFFSET_MAX, 1.0f },
     { NULL,            NULL,                     NULL,          0,    0, 0,    0, 0 }
 };
 
@@ -1523,6 +1528,12 @@ GtkWidget *sid_sound_widget_create(void)
     gtk_widget_set_sensitive(chip_profile, current_engine == SID_ENGINE_RESIDFP);
 
     residfp_6581_grid = create_sliders(fp_sliders_6581, "ReSIDfp 6581 filter settings");
+    {
+        /* the cutoff curve graph goes with the 6581 sliders */
+        GtkWidget *curve = sid_curve_widget_create();
+        gtk_grid_attach(GTK_GRID(residfp_6581_grid), curve, 0, 100, 3, 1);
+        gtk_widget_show_all(curve);
+    }
     residfp_8580_grid = create_sliders(fp_sliders_8580, "ReSIDfp 8580 filter settings");
     residfp_common_grid = create_sliders(fp_sliders_common, "ReSIDfp settings for both models");
     gtk_grid_attach(GTK_GRID(grid), residfp_6581_grid, 0, row + 2, 3 ,1);

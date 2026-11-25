@@ -405,16 +405,33 @@ void FilterModelConfig6581::setOpampGain(double gain)
     t4.join();
 }
 
-uint16_t* FilterModelConfig6581::getDAC(double adjustment) const
+uint16_t* FilterModelConfig6581::getDAC(double adjustment, const double* shape, int shapeKnots) const
 {
     const double new_dac_zero = getDacZero(adjustment);
 
     uint16_t* f0_dac = new uint16_t[1 << DAC_BITS];
 
+    // keep Vw inside the table range and below Vddt (the VCR must stay on)
+    const double vLow = vmin;
+    const double vHigh = std::min(vmax, Vddt - 0.05);
+
     for (unsigned int i = 0; i < (1 << DAC_BITS); i++)
     {
         const double fcd = dac.getOutput(i);
-        f0_dac[i] = getNormalizedValue(new_dac_zero + fcd * dac_scale);
+        double v = new_dac_zero + fcd * dac_scale;
+        if (shape != nullptr && shapeKnots > 1)
+        {
+            // user curve shape: voltage offsets at evenly spaced FC values,
+            // linear in between (the DAC kinks stay as they are)
+            const double x = static_cast<double>(i) * (shapeKnots - 1) / ((1 << DAC_BITS) - 1);
+            int k = static_cast<int>(x);
+            if (k > shapeKnots - 2) k = shapeKnots - 2;
+            const double f = x - k;
+            v += shape[k] * (1. - f) + shape[k + 1] * f;
+        }
+        if (v < vLow) v = vLow;
+        if (v > vHigh) v = vHigh;
+        f0_dac[i] = getNormalizedValue(v);
     }
 
     return f0_dac;

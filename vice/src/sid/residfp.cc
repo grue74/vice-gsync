@@ -85,6 +85,10 @@ struct sound_s
 
     /* filter capacitor settings applied to this chip (see residfp_caps_gen) */
     unsigned int caps_gen;
+
+    /* clock frequency and model, for the cutoff curve */
+    double clock_hz;
+    int is6581;
 };
 
 typedef struct sound_s sound_t;
@@ -97,6 +101,20 @@ static volatile int residfp_caps_c2 = 0;
 static volatile int residfp_dac_ratio = 2200;
 static volatile int residfp_snake_scale = 1000;
 static volatile int residfp_resonance_q = 1000;
+static volatile int residfp_wave_offset = 896;
+static volatile int residfp_curve_knots[RESIDFP_6581_CURVE_KNOTS];
+
+/* cutoff curve for the UI, computed by one chip a few points per buffer */
+#define CURVE_POINTS_PER_BUFFER 8
+static sound_t *residfp_curve_owner = NULL;
+static int residfp_curve_next = -1;          /* -1 idle, else next point (ref points first) */
+static double residfp_curve_work[2 * RESIDFP_CURVE_POINTS];
+static double residfp_curve_hz[RESIDFP_CURVE_POINTS];
+static double residfp_curve_ref[RESIDFP_CURVE_POINTS];
+static volatile int residfp_curve_count = 0;
+static volatile unsigned int residfp_curve_serial = 0;
+static int residfp_curve_sig[6];
+static int residfp_curve_ref_valid = 0;
 
 /* resonance strength and 6581 op-amp gain: tables shared by all chips, rebuilt
    on the sound side once the value has been still for TABLES_SETTLE_MS */
@@ -161,6 +179,8 @@ static void residfp_apply_filter_tables(sound_t *psid)
         psid->sid->setFilter6581OpampGain(gain / 1000.0);
         residfp_opamp_gain_applied = gain;
     }
+    residfp_curve_ref_valid = 0;
+    residfp_curve_next = 0;
 }
 
 void residfp_set_snake_scale(int scale)
@@ -173,6 +193,133 @@ void residfp_set_resonance_q(int q)
 {
     residfp_resonance_q = q;
     residfp_caps_gen = residfp_caps_gen + 1;
+}
+
+void residfp_set_wave_offset(int offset)
+{
+    residfp_wave_offset = offset;
+    residfp_caps_gen = residfp_caps_gen + 1;
+}
+
+void residfp_set_curve_knot(int knot, int millivolts)
+{
+    if (knot >= 0 && knot < RESIDFP_6581_CURVE_KNOTS) {
+        residfp_curve_knots[knot] = millivolts;
+        residfp_caps_gen = residfp_caps_gen + 1;
+    }
+}
+
+/* FC values of the curve points: every 32 FC, plus both sides of the cutoff
+   DAC carries (255/256, 511/512, ...), where the 6581 cutoff drops */
+static int residfp_curve_fcs[RESIDFP_CURVE_POINTS];
+static int residfp_curve_npoints = 0;
+
+static void residfp_curve_table(void)
+{
+    char used[2048];
+    int fc;
+    int n = 0;
+
+    if (residfp_curve_npoints > 0) {
+        return;
+    }
+    memset(used, 0, sizeof used);
+    for (fc = 0; fc < 2048; fc += 32) {
+        used[fc] = 1;
+    }
+    used[2047] = 1;
+    for (fc = 256; fc < 2048; fc += 256) {
+        used[fc - 1] = 1;
+        used[fc] = 1;
+    }
+    for (fc = 0; fc < 2048 && n < RESIDFP_CURVE_POINTS; fc++) {
+        if (used[fc]) {
+            residfp_curve_fcs[n++] = fc;
+        }
+    }
+    residfp_curve_npoints = n;
+}
+
+int residfp_curve_fc(int point)
+{
+    residfp_curve_table();
+    if (point < 0 || point >= residfp_curve_npoints) {
+        return 0;
+    }
+    return residfp_curve_fcs[point];
+}
+
+int residfp_get_6581_curve(double *hz, double *ref, unsigned int *serial)
+{
+    int n = residfp_curve_count;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        hz[i] = residfp_curve_hz[i];
+        if (ref != NULL) {
+            ref[i] = residfp_curve_ref[i];
+        }
+    }
+    if (serial != NULL) {
+        *serial = residfp_curve_serial;
+    }
+    return n;
+}
+
+/* Compute a few points of the cutoff curve (with and without the user
+   shape) per sound buffer, so that the sound thread is never held up for
+   long; publish the curve when all points are done. */
+static void residfp_curve_step(sound_t *psid)
+{
+    static const double zero[RESIDFP_6581_CURVE_KNOTS] = { 0 };
+    double shape[RESIDFP_6581_CURVE_KNOTS];
+    unsigned int fcs[CURVE_POINTS_PER_BUFFER];
+    int i;
+    int n;
+    int ref;
+    int first;
+
+    if (psid != residfp_curve_owner || residfp_curve_next < 0) {
+        return;
+    }
+    if (!psid->is6581) {
+        residfp_curve_count = 0;
+        residfp_curve_serial = residfp_curve_serial + 1;
+        residfp_curve_next = -1;
+        return;
+    }
+    for (i = 0; i < RESIDFP_6581_CURVE_KNOTS; i++) {
+        shape[i] = residfp_curve_knots[i];
+    }
+    /* points 0..P-1: reference (no shape), P..2P-1: with the shape */
+    residfp_curve_table();
+    first = residfp_curve_next;
+    ref = first < residfp_curve_npoints;
+    n = (ref ? residfp_curve_npoints : 2 * residfp_curve_npoints) - first;
+    if (n > CURVE_POINTS_PER_BUFFER) {
+        n = CURVE_POINTS_PER_BUFFER;
+    }
+    for (i = 0; i < n; i++) {
+        fcs[i] = (unsigned int)residfp_curve_fc((first + i) % residfp_curve_npoints);
+    }
+    if (ref) {
+        /* the reference needs the shape off for a moment (between buffers) */
+        psid->sid->setFilter6581CurveShape(zero);
+        psid->sid->estimate6581Cutoffs(fcs, n, psid->clock_hz, &residfp_curve_work[first]);
+        psid->sid->setFilter6581CurveShape(shape);
+    } else {
+        psid->sid->estimate6581Cutoffs(fcs, n, psid->clock_hz, &residfp_curve_work[first]);
+    }
+    residfp_curve_next = first + n;
+    if (residfp_curve_next >= 2 * residfp_curve_npoints) {
+        for (i = 0; i < residfp_curve_npoints; i++) {
+            residfp_curve_ref[i] = residfp_curve_work[i];
+            residfp_curve_hz[i] = residfp_curve_work[residfp_curve_npoints + i];
+        }
+        residfp_curve_count = residfp_curve_npoints;
+        residfp_curve_serial = residfp_curve_serial + 1;
+        residfp_curve_next = -1;
+    }
 }
 
 static void residfp_apply_filter_caps(sound_t *psid)
@@ -188,7 +335,41 @@ static void residfp_apply_filter_caps(sound_t *psid)
         psid->sid->setFilter6581DacRatio(residfp_dac_ratio / 1000.0);
         psid->sid->setFilter6581SnakeScale(residfp_snake_scale / 1000.0);
         psid->sid->setFilter6581ResonanceQ(residfp_resonance_q / 1000.0);
+        psid->sid->setOffset6581Value((unsigned int)residfp_wave_offset);
+        {
+            double shape[RESIDFP_6581_CURVE_KNOTS];
+            int i;
+
+            for (i = 0; i < RESIDFP_6581_CURVE_KNOTS; i++) {
+                shape[i] = residfp_curve_knots[i];
+            }
+            psid->sid->setFilter6581CurveShape(shape);
+        }
+        if (psid == residfp_curve_owner) {
+            /* the reference curve (without the shape) only needs redoing when
+               something else than the shape changed; dragging a knot then
+               only recomputes the shaped half */
+            int sig[6];
+            int same;
+
+            sig[0] = residfp_caps_c1;
+            sig[1] = residfp_caps_c2;
+            sig[2] = residfp_dac_ratio;
+            sig[3] = residfp_snake_scale;
+            sig[4] = residfp_resonance_q;
+            sig[5] = residfp_wave_offset;
+            same = residfp_curve_ref_valid && memcmp(sig, residfp_curve_sig, sizeof sig) == 0;
+            memcpy(residfp_curve_sig, sig, sizeof sig);
+            residfp_curve_ref_valid = 1;
+            if (!same) {
+                residfp_curve_next = 0;
+            } else if (residfp_curve_next < 0 || residfp_curve_next >= residfp_curve_npoints) {
+                residfp_curve_table();
+                residfp_curve_next = residfp_curve_npoints;
+            }
+        }
     }
+    residfp_curve_step(psid);
 }
 
 /* manage temporary buffers. if the requested size is smaller or equal to the
@@ -220,6 +401,8 @@ static sound_t *residfp_open(uint8_t *sidstate, int chipno)
     psid->chipno = chipno;
     psid->sid = new reSIDfp::SID;
     psid->caps_gen = 0;
+    psid->clock_hz = 985248.0;
+    psid->is6581 = 0;
 
     for (i = 0x00; i <= 0x18; i++) {
         psid->sid->write(i, sidstate[i]);
@@ -318,7 +501,15 @@ static int residfp_init(sound_t *psid, int speed, int cycles_per_sec, int factor
     /* FIXME: also handle CAPS330 ("Galway C128") */
     psid->sid->set6581caps(old_caps ? CAPS2200 : CAPS470);
     psid->sid->setCombinedWaveforms(combined_table[combined_strength_int]);
+    psid->clock_hz = (double)cycles_per_sec;
+    psid->is6581 = (model == 0);
+    if (residfp_curve_owner == NULL || psid->chipno == 0) {
+        residfp_curve_owner = psid;
+    }
     psid->caps_gen = 0;
+    if (psid == residfp_curve_owner) {
+        residfp_curve_ref_valid = 0;
+    }
     residfp_apply_filter_caps(psid);
 
     switch (sampling) {
@@ -352,6 +543,12 @@ static int residfp_init(sound_t *psid, int speed, int cycles_per_sec, int factor
 
 static void residfp_close(sound_t *psid)
 {
+    if (residfp_curve_owner == psid) {
+        residfp_curve_owner = NULL;
+        residfp_curve_next = -1;
+        residfp_curve_count = 0;
+        residfp_curve_serial = residfp_curve_serial + 1;
+    }
     delete psid->sid;
     delete psid;
 

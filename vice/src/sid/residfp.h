@@ -44,6 +44,23 @@ void residfp_set_snake_scale(int scale);
 /* Set the 6581 resonance Q scale (x1000) of all reSIDfp chips, live. */
 void residfp_set_resonance_q(int q);
 
+/* Set the 6581 waveform DAC zero level (raw DAC input) of all reSIDfp
+   chips, live. */
+void residfp_set_wave_offset(int offset);
+
+/* Set one knot (0..8) of the 6581 cutoff curve shape, in mV, live. */
+void residfp_set_curve_knot(int knot, int millivolts);
+
+/* The 6581 cutoff curve of the playing chip, for showing it: cutoff in Hz
+   at up to RESIDFP_CURVE_POINTS FC values (residfp_curve_fc(), rising; every
+   32 FC plus both sides of each cutoff DAC carry), with the curve
+   shape (hz) and without it (ref; NULL to skip). Computed on the sound
+   side a moment after a setting changes; *serial changes with every new
+   curve. Returns the number of points, 0 when no reSIDfp 6581 plays. */
+#define RESIDFP_CURVE_POINTS 80
+int residfp_get_6581_curve(double *hz, double *ref, unsigned int *serial);
+int residfp_curve_fc(int point);
+
 /* Set the resonance strength (x1000, both models) and the 6581 op-amp gain
    (x1000). These rebuild tables shared by all chips (~50 ms each), so they
    are applied once the value has stayed the same for a moment. */

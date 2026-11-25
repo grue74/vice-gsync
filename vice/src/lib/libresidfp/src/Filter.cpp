@@ -72,6 +72,11 @@ void Filter::updateMixing()
     currentMixer = mixer + mixerIdx[Nmix];
 }
 
+const uint16_t* Filter::getSummerTable(int inputs) const
+{
+    return summer + summerIdx[inputs];
+}
+
 void Filter::writeFC_LO(uint8_t fc_lo)
 {
     fc = (fc & 0x7f8) | (fc_lo & 0x007);

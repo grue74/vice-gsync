@@ -138,7 +138,7 @@ public:
      * @param adjustment
      * @return the DAC table
      */
-    uint16_t* getDAC(double adjustment) const;
+    uint16_t* getDAC(double adjustment, const double* shape = nullptr, int shapeKnots = 0) const;
 
     /**
      * Set the 2R/R ratio of the cutoff DAC (2.20 by default; 2.00 is an ideal,

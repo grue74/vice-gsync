@@ -119,6 +119,10 @@ protected:
      */
     void updateResonance(uint8_t res) { currentResonance = resonance + (res * (1<<16)); }
 
+    /// summer table for a number of filtered inputs, resonance table (for estimates)
+    const uint16_t* getSummerTable(int inputs) const;
+    const uint16_t* getResonanceTable(int res) const { return resonance + (res * (1<<16)); }
+
     /**
      * Mixing configuration modified (offsets change)
      */

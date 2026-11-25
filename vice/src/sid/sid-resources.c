@@ -94,6 +94,8 @@ static int sid_residfp_filter_c2;
 static int sid_residfp_6581_dac_ratio;
 static int sid_residfp_6581_snake;
 static int sid_residfp_6581_resonance_q;
+static int sid_residfp_6581_wave_offset;
+static int sid_residfp_6581_curve_knot[RESIDFP_6581_CURVE_KNOTS];
 static int sid_residfp_resonance_strength;
 static int sid_residfp_6581_opamp_gain;
 #endif
@@ -541,6 +543,34 @@ static int set_sid_residfp_6581_resonance_q(int val, void *param)
     return 0;
 }
 
+/* 6581 waveform DAC zero level: applied live, no SID re-init */
+static int set_sid_residfp_6581_wave_offset(int val, void *param)
+{
+    if (val < RESIDFP_6581_WAVE_OFFSET_MIN) {
+        val = RESIDFP_6581_WAVE_OFFSET_MIN;
+    } else if (val > RESIDFP_6581_WAVE_OFFSET_MAX) {
+        val = RESIDFP_6581_WAVE_OFFSET_MAX;
+    }
+    sid_residfp_6581_wave_offset = val;
+    residfp_set_wave_offset(val);
+    return 0;
+}
+
+/* 6581 cutoff curve shape knot (param = knot index): applied live */
+static int set_sid_residfp_6581_curve_knot(int val, void *param)
+{
+    int k = vice_ptr_to_int(param);
+
+    if (val < RESIDFP_6581_CURVE_KNOT_MIN) {
+        val = RESIDFP_6581_CURVE_KNOT_MIN;
+    } else if (val > RESIDFP_6581_CURVE_KNOT_MAX) {
+        val = RESIDFP_6581_CURVE_KNOT_MAX;
+    }
+    sid_residfp_6581_curve_knot[k] = val;
+    residfp_set_curve_knot(k, val);
+    return 0;
+}
+
 /* resonance strength (both models): applied live */
 static int set_sid_residfp_resonance_strength(int val, void *param)
 {
@@ -707,6 +737,26 @@ static const resource_int_t residfp_resources_int[] = {
       &sid_residfp_6581_snake, set_sid_residfp_6581_snake, NULL },
     { "SidResid6581ResonanceQ", RESIDFP_6581_RESONANCE_Q_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_6581_resonance_q, set_sid_residfp_6581_resonance_q, NULL },
+    { "SidResid6581WaveOffset", RESIDFP_6581_WAVE_OFFSET_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_wave_offset, set_sid_residfp_6581_wave_offset, NULL },
+    { "SidResid6581CurveK0", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[0], set_sid_residfp_6581_curve_knot, (void *)0 },
+    { "SidResid6581CurveK1", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[1], set_sid_residfp_6581_curve_knot, (void *)1 },
+    { "SidResid6581CurveK2", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[2], set_sid_residfp_6581_curve_knot, (void *)2 },
+    { "SidResid6581CurveK3", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[3], set_sid_residfp_6581_curve_knot, (void *)3 },
+    { "SidResid6581CurveK4", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[4], set_sid_residfp_6581_curve_knot, (void *)4 },
+    { "SidResid6581CurveK5", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[5], set_sid_residfp_6581_curve_knot, (void *)5 },
+    { "SidResid6581CurveK6", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[6], set_sid_residfp_6581_curve_knot, (void *)6 },
+    { "SidResid6581CurveK7", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[7], set_sid_residfp_6581_curve_knot, (void *)7 },
+    { "SidResid6581CurveK8", RESIDFP_6581_CURVE_KNOT_DEFAULT, RES_EVENT_NO, NULL,
+      &sid_residfp_6581_curve_knot[8], set_sid_residfp_6581_curve_knot, (void *)8 },
     { "SidResidResonanceStrength", RESIDFP_RESONANCE_STRENGTH_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_resonance_strength, set_sid_residfp_resonance_strength, NULL },
     { "SidResid6581OpampGain", RESIDFP_6581_OPAMP_GAIN_DEFAULT, RES_EVENT_NO, NULL,

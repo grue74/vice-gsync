@@ -424,6 +424,28 @@ public:
     void setFilter6581ResonanceQ(double q);
 
     /**
+     * Set the 6581 waveform DAC "zero" level as a raw 12 bit DAC input
+     * (0x380 = 896 by default). It sets the DC level of the voices going
+     * into the filter and mixer, so it moves the filter working point
+     * (distortion) and the volume register click level. Rebuilds the
+     * waveform DAC table; does nothing when the value is unchanged.
+     */
+    void setOffset6581Value(unsigned int value);
+
+    /**
+     * User shape of the 6581 cutoff curve: DAC offsets in millivolts at
+     * FC 0, 256, ..., 1792, 2047 (9 values). Per chip, live.
+     */
+    void setFilter6581CurveShape(const double* millivolts);
+
+    /**
+     * 6581 cutoff frequencies (Hz) at some FC values with this chip's
+     * current filter settings (for showing the curve), see
+     * Filter6581::estimateCutoffs. A few ms for 64 points.
+     */
+    void estimate6581Cutoffs(const unsigned int* fcs, int count, double clockFrequency, double* hz) const;
+
+    /**
      * Resonance strength for both models (1.0 = nominal, 2.0 = double Q).
      * Shared by all chips; rebuilds a table, call only on a change.
      */

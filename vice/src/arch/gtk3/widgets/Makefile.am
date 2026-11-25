@@ -195,6 +195,7 @@ libwidgets_a_SOURCES = \
 	settings_vicioram.c \
 	settings_video.c \
 	sidenginemodelwidget.c \
+	sidcurvewidget.c \
 	sidfilterpresets.c \
 	sidmodelwidget.c \
 	sidsoundwidget.c \
@@ -376,6 +377,7 @@ EXTRA_DIST = \
 	settings_video.h \
 	sidenginemodelwidget.h \
 	sidmodelwidget.h \
+	sidcurvewidget.h \
 	sidfilterpresets.h \
 	sidsoundwidget.h \
 	soundbuffersizewidget.h \

@@ -55,7 +55,10 @@ static const char *preset_resources[] = {
     "SidResid6581OldCaps", "SidResidCombinedWaveformStrength",
     "SidResidFilterC1", "SidResidFilterC2", "SidResid6581DacRatio",
     "SidResid6581Snake", "SidResidResonanceStrength", "SidResid6581OpampGain",
-    "SidResid6581ResonanceQ",
+    "SidResid6581ResonanceQ", "SidResid6581WaveOffset",
+    "SidResid6581CurveK0", "SidResid6581CurveK1", "SidResid6581CurveK2",
+    "SidResid6581CurveK3", "SidResid6581CurveK4", "SidResid6581CurveK5",
+    "SidResid6581CurveK6", "SidResid6581CurveK7", "SidResid6581CurveK8",
     NULL
 };
 

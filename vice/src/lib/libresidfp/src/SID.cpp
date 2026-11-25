@@ -639,6 +639,26 @@ void SID::setOffset6581(double offset)
     setChipModel(model);
 }
 
+void SID::setOffset6581Value(unsigned int value)
+{
+    if (value > 0xfff)
+        value = 0xfff;
+    if (value == offset_6581)
+        return;
+    offset_6581 = value;
+    setChipModel(model);
+}
+
+void SID::setFilter6581CurveShape(const double* millivolts)
+{
+    filter6581->setCurveShape(millivolts);
+}
+
+void SID::estimate6581Cutoffs(const unsigned int* fcs, int count, double clockFrequency, double* hz) const
+{
+    filter6581->estimateCutoffs(fcs, count, clockFrequency, hz);
+}
+
 void SID::setDCBRes(double res)
 {
     externalFilter.setExtResistance(clamp<double, 0, 1>(res));

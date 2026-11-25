@@ -321,6 +321,10 @@ class Filter6581 final : public Filter
 {
     friend class State;
 
+public:
+    /// knots of the user curve shape, at FC 0, 256, ..., 2047
+    static constexpr int CURVE_SHAPE_KNOTS = 9;
+
 private:
     /// VCR + associated capacitor connected to highpass output.
     Integrator6581 hpIntegrator;
@@ -336,6 +340,10 @@ private:
 
     /// resonance Q scale, applied as an integrator rate ratio
     double resonanceQ = 1.0;
+
+    /// filter curve position and user curve shape (DAC volts at the knots)
+    double curvePosition = 0.5;
+    double curveShape[CURVE_SHAPE_KNOTS] = {};
 
     void applyIntegratorRates()
     {
@@ -394,6 +402,23 @@ public:
      *                      Default is 0.5
      */
     void setFilterCurve(double curvePosition);
+
+    /**
+     * User shape of the cutoff curve: offsets of the cutoff DAC output in
+     * millivolts at FC 0, 256, ..., 1792, 2047 (CURVE_SHAPE_KNOTS values,
+     * linear in between). Positive raises the cutoff there. All zero is the
+     * plain model.
+     */
+    void setCurveShape(const double* millivolts);
+
+    /**
+     * Cutoff frequencies (Hz) at some FC values with the current settings,
+     * measured like on a scope: copies of the integrators get a small input
+     * step at resonance 15, the bandpass rings, and its period and decay
+     * give the natural frequency. The filter itself is not touched.
+     * 0 where it could not be measured.
+     */
+    void estimateCutoffs(const unsigned int* fcs, int count, double clockFrequency, double* hz) const;
 
     /**
      * Set filter offset and range based on single parameter.

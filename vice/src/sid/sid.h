@@ -233,6 +233,21 @@ enum {
 #define RESIDFP_6581_RESONANCE_Q_ONE              1000
 #define RESIDFP_6581_RESONANCE_Q_DEFAULT          1000
 
+/* 6581 waveform DAC zero level, raw 12 bit DAC input (0x380 = 896 is the
+   reSIDfp default): the DC level of the voices into the filter/mixer */
+#define RESIDFP_6581_WAVE_OFFSET_MIN              384
+#define RESIDFP_6581_WAVE_OFFSET_MAX              1792
+#define RESIDFP_6581_WAVE_OFFSET_ONE              1
+#define RESIDFP_6581_WAVE_OFFSET_DEFAULT          896
+
+/* 6581 cutoff curve shape: offsets of the cutoff DAC output in mV at FC
+   0, 256, ..., 1792, 2047 (linear in between); resources
+   SidResid6581CurveK0..K8 */
+#define RESIDFP_6581_CURVE_KNOTS                  9
+#define RESIDFP_6581_CURVE_KNOT_MIN               -1000
+#define RESIDFP_6581_CURVE_KNOT_MAX               1000
+#define RESIDFP_6581_CURVE_KNOT_DEFAULT           0
+
 
 void machine_sid2_enable(int val);
 

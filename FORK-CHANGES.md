@@ -305,10 +305,43 @@ reSIDfp used one value for both capacitors.
   15, one at 0): matched caps with Q x1.106 score the same as the fitted
   C1 -10 % / C2 +10 % (3.627 vs 3.628, every tune within 0.001), and a refit
   with the caps held at 0 % found nothing better.
+- **6581 wave offset**: the zero level of the 6581 waveform DAC, as a raw
+  12 bit DAC input (reSIDfp default 0x380 = 896). It sets the DC level of
+  the voices going into the filter and mixer, so it moves the filter
+  working point (its distortion) and the level of volume register writes
+  (digis, clicks). reSIDfp had `setOffset6581(0..1)` (0x380..0x580, "TODO
+  determine a reasonable range") but VICE never called it. Resource
+  `SidResid6581WaveOffset` (384..1792, default 896; option
+  `-resid6581waveoffset`), per chip and live; `SID::setOffset6581Value`
+  rebuilds the waveform DAC table only when the value changes. Sliders on
+  the VSID panel, Settings > Audio > SID and the status-bar mixer; saved
+  in own filter settings.
+- **6581 cutoff curve shape, with a graph**: nine knots that move the
+  cutoff DAC voltage at FC 0, 256, ..., 1792, 2047 (linear in between, in
+  mV; positive raises the cutoff there), on top of the model's curve, so
+  a chip whose curve has a different shape (not just a shifted or
+  stretched one) can be matched. Resources `SidResid6581CurveK0..K8`
+  (-1000..1000, default 0; options `-resid6581curvek0..k8`), per chip and
+  live, saved in own filter settings. Library: `Filter6581::setCurveShape`
+  adds the offsets inside `FilterModelConfig6581::getDAC` (clamped below
+  Vddt), so DAC ratio and curve changes keep them. The graph (VSID panel and
+  Settings > Audio > SID, 6581 only) plots cutoff against FC for the
+  playing chip, with and without the shape, and the knots can be dragged
+  (double click = 0, "Flat" = all 0). The cutoff comes from
+  `Filter6581::estimateCutoffs`: copies of the integrators get a full-level
+  step at resonance 15 and the first half period of the bandpass ringing
+  is timed. That matches a full-level noise measurement of the cutoff within
+  about 15 %; low in the curve the 6581 cutoff also depends on the signal
+  level (the ringing slows down as it decays). It is computed on the sound
+  thread, 8 points per buffer, so playback is never held up for long.
+  The graph also shows the reSIDfp default curve as a fixed grey line,
+  and samples both sides of every cutoff DAC carry (FC 255/256, 511/512,
+  ...) so the DAC kink steps show.
+  The mixer under the screen doesn't get the graph (no room).
 - **Own filter settings** ("My settings" on the VSID panel, "My filter
   settings" on Settings > Audio > SID): save every filter value (reSID and
   reSIDfp sliders, C1/C2, DAC ratio, snake, resonance strength, op-amp gain,
-  resonance Q, combined waveforms, old caps, filter on/off; not the engine or
+  resonance Q, wave offset, curve shape, combined waveforms, old caps, filter on/off; not the engine or
   model) under a name, load it by choosing it from the list, delete it. A
   value missing from a saved setting (saved before that slider existed) is
   set to its default on loading, so a setting always sounds the same. Both places share

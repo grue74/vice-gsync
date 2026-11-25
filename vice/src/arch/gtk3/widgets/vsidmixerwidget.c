@@ -25,6 +25,7 @@
  * $VICERES SidResidResonanceStrength vsid
  * $VICERES SidResid6581OpampGain   vsid
  * $VICERES SidResid6581ResonanceQ  vsid
+ * $VICERES SidResid6581WaveOffset  vsid
  * $VICERES SidFilters              vsid
  * $VICERES SidEngine               vsid
  * $VICERES SidModel                vsid
@@ -69,6 +70,7 @@
 #include "sid.h"
 
 #include "sidfilterpresets.h"
+#include "sidcurvewidget.h"
 #include "vsidmixerwidget.h"
 
 
@@ -213,6 +215,14 @@ static const mixer_scale_t fp_scales_6581[] = {
       "Scales the 6581 filter Q at every resonance value, 15 included, without"
       " moving the cutoff or raising the bandpass level. Resonance strength has"
       " no effect at resonance 15; this does. Applies while playing." },
+    { "Wave offset", "SidResid6581WaveOffset", "%.0f",
+      RESIDFP_6581_WAVE_OFFSET_MIN, RESIDFP_6581_WAVE_OFFSET_MAX,
+      RESIDFP_6581_WAVE_OFFSET_MIN, RESIDFP_6581_WAVE_OFFSET_MAX, 1,
+      "Zero level of the 6581 waveform DAC (raw DAC value, 896 default):"
+      " the DC level of the voices going into the filter and mixer. Moves"
+      " the filter working point, so the filter distortion changes, and"
+      " sets how loud volume register writes (digis, clicks) are."
+      " Applies while playing." },
     { NULL, NULL, NULL, 0, 0, 0, 0, 0, NULL }
 };
 
@@ -573,6 +583,10 @@ static void populate(GtkWidget *grid)
         }
         widget = create_cap_presets();
         gtk_grid_attach(GTK_GRID(grid), widget, 1, row++, 1, 1);
+
+        if (!is_8580) {
+            gtk_grid_attach(GTK_GRID(grid), sid_curve_widget_create(), 0, row++, 2, 1);
+        }
     }
 #endif
 
