@@ -150,7 +150,7 @@ the upper bits of `$D030` and of bits 4-6 of `$D031` are guesses.
 ## 3. C64: Ultimate Command Interface (UCI) emulation, for netsid
 
 Files: `src/c64/cart/ultimate_uci.c/.h`, `src/c64/cart/c64carthooks.c`,
-`src/c64/cart/Makefile.am`, `src/cartridge.h`, `src/sound.c`
+`src/c64/cart/Makefile.am`, `src/cartridge.h`, `src/sound.c`, `src/socket.c`
 
 **Why:** to run netsid, and other software that uses the 1541 Ultimate-II /
 Ultimate 64 command interface, in VICE.
@@ -169,6 +169,21 @@ Ultimate 64 command interface, in VICE.
 - `sound.c`: in warp mode, samples keep going to a file sound device (wav)
   and to the recording device, so a netsid capture made in warp mode is
   complete. Normally VICE drops sound in warp.
+- Network target closer to the firmware:
+  - UDP sockets (`OPEN_UDP`): one WRITE sends one datagram, one READ returns
+    one; a too-long datagram is cut ("04,DATAGRAM TRUNCATED"), an empty one
+    reads as 0 bytes (`-uciemptyclose`: closes the socket, as in 3.15a)
+  - `READ_SOCKET` with nothing waiting stays busy up to 40 ms like the
+    firmware's receive timeout, counted in C64 cycles and ended early by an
+    arriving packet (`-ucireadwait <ms>`, 0 = answer at once)
+  - the firmware's errno values (lwIP through newlib): refused connect 104,
+    no answer 113, a broken TCP connection reports its error to the next
+    READ/WRITE and then 128 (ENOTCONN), a bad handle 9
+  - `-uciip ip[/netmask[/gateway]]`, `SET_IPADDR`; the address outlives a
+    C64 reset, as on the Ultimate
+- `socket.c`: a failed connect keeps its error code (`closesocket()` cleared
+  it on Windows), and name lookups start the network first (on Windows
+  `gethostbyname` failed until some socket had been opened).
 
 ---
 

@@ -28,15 +28,43 @@
 
     A command runs at once when pushed: the state goes straight from idle to a data
     state (the real one is busy for a while; programs wait on the busy state anyway).
+    The one exception is READ_SOCKET with nothing waiting: the firmware gives every
+    socket a 40 ms receive timeout (SO_RCVTIMEO), so the interface stays busy until a
+    packet arrives or the 40 ms pass. That is emulated in C64 cycles
+    (-ucireadwait <ms>, 0 = answer at once), checking the socket about every 1000
+    cycles so a packet that arrives during the wait ends it early, as on the real one.
 
     Targets:
       1, 2  DOS: IDENTIFY, OPEN/CLOSE_FILE, READ/WRITE_DATA, CHANGE_DIR, GET_PATH,
             COPY_HOME_PATH, ECHO. Files live in memory (folders "/", "/Temp", "/Usb0");
             a file written is logged when closed. -ucitempfs off: opening in /Temp
             fails as on a U64 with firmware 3.15a ("NO FILESYSTEM").
-      3     network: IDENTIFY, GET_INTERFACE_COUNT, GET_NETADDR (-ucimac), GET_IPADDR,
+      3     network: IDENTIFY, GET_INTERFACE_COUNT, GET_NETADDR (-ucimac), GET_IPADDR
+            (-uciip, or what SET_IPADDR set: that outlives a C64 reset, as on the
+            Ultimate), SET_IPADDR,
             OPEN_TCP (real TCP to the host, IPv4 like the firmware's lwIP),
-            CLOSE_SOCKET, READ_SOCKET (never waits: "02,NO DATA"), WRITE_SOCKET.
+            OPEN_UDP (a real UDP socket; one WRITE_SOCKET sends one datagram to the
+            host and port given at open, one READ_SOCKET returns one datagram),
+            CLOSE_SOCKET, READ_SOCKET (waits up to -ucireadwait ms, then
+            "02,NO DATA: 11"), WRITE_SOCKET.
+            UDP as in the firmware: a datagram longer than the READ length is cut
+            and the status says "04,DATAGRAM TRUNCATED: <its length>". An empty
+            datagram is a 0-byte read with "00,OK" and the socket stays open, as
+            in firmware after 3.15a (commit dc1c298a); -uciemptyclose: as in 3.15a,
+            it closes the socket like a TCP close ("01,CONNECTION CLOSED BY HOST"). Differences: the firmware
+            connect()s its UDP socket, so it only takes datagrams from that host and
+            port; here any sender gets through. Windows reports a lost ICMP
+            "port unreachable" as a receive error; that reads as "no data" here, as
+            lwIP ignores it.
+            Error numbers are the firmware's (newlib for nios2, through lwIP's
+            err_to_errno): a refused connect is "11,ERROR ON CONNECT: 104" (lwIP
+            sees a reset), no answer "...: 113" (lwIP's SYN timeout; here after the
+            host's own timeout, with VICE stopped meanwhile). A TCP connection the
+            host resets stays open with its error, as in lwIP: the first two READs
+            say "02,NO DATA: 104" (113 if aborted), and a WRITE that finds the
+            error first says "12,SEND ERROR: 104"; after that every READ and WRITE
+            gets 128 (ENOTCONN), at once. A peer's normal close is "01,CONNECTION
+            CLOSED BY HOST" and closes the socket. A bad handle gives errno 9.
       4     control: IDENTIFY, GET_HWINFO (device 0: -uciproduct; device 1: one SID
             at $D400), LOAD_CONFIG $50 (logs the file; +uciloadconfig answers
             "21,UNKNOWN COMMAND" as a C64 Ultimate does).
@@ -49,11 +77,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alarm.h"
 #include "cartio.h"
 #include "cartridge.h"
 #include "cmdline.h"
 #include "lib.h"
 #include "log.h"
+#include "machine.h"
+#include "maincpu.h"
 #include "monitor.h"
 #include "resources.h"
 #include "ultimate_uci.h"
@@ -80,6 +111,8 @@
 
 #define MAX_SOCKETS     8
 #define READ_MAX        1472
+#define DATAGRAM_MAX    65536   /* receive buffer for UDP: Windows fails a datagram that doesn't fit */
+#define WAIT_POLL       1000    /* cycles between socket checks during the read wait */
 #define MAX_FILES       16
 #define FILE_MAX        65536
 
@@ -89,8 +122,11 @@ static log_t uci_log = LOG_DEFAULT;
 static int uci_enabled = 0;
 static char *uci_mac = NULL;            /* "02:55:43:49:00:01" */
 static char *uci_product = NULL;        /* GET_HWINFO device 0 */
+static char *uci_ip = NULL;             /* -uciip: "ip[/netmask[/gateway]]" */
 static int uci_load_config = 1;         /* control $50 known (firmware 3.15+) */
 static int uci_temp_fs = 1;             /* /Temp takes new files */
+static int uci_empty_closes = 0;        /* an empty UDP datagram closes the socket (fw 3.15a) */
+static int uci_read_wait = 40;          /* ms READ_SOCKET waits for data (firmware SO_RCVTIMEO) */
 
 /* interface state */
 static uint8_t cmd[CMD_MAX];
@@ -107,6 +143,46 @@ static int status_len, status_ptr;
 
 /* network */
 static vice_network_socket_t *sockets[MAX_SOCKETS];
+static vice_network_socket_address_t *udp_peer[MAX_SOCKETS];   /* UDP: where WRITE sends; NULL = TCP */
+static uint8_t *datagram;               /* UDP receive buffer, DATAGRAM_MAX bytes */
+
+/* A TCP connection the host broke (reset, aborted) stays open in the table, as in
+   lwIP, and answers with its error the way lwIP does: the error is posted once to
+   the receive queue and once as the "pending" error, and each is used up by the
+   first READ (queue first) or WRITE (pending only) that finds it; after that every
+   READ and WRITE gets ENOTCONN. */
+static int broken_errno[MAX_SOCKETS];   /* 0 = fine, else the firmware errno of the break */
+static int broken_in_queue[MAX_SOCKETS];
+static int broken_pending[MAX_SOCKETS];
+
+/* errno values as the firmware reports them (newlib for nios2, as lwIP's
+   err_to_errno gives them) */
+#define FW_EBADF        9
+#define FW_EWOULDBLOCK  11
+#define FW_ECONNRESET   104     /* lwIP ERR_RST: reset by the peer, also a refused connect */
+#define FW_ECONNABORTED 113     /* lwIP ERR_ABRT: no answer (connect or retransmit timeout) */
+#define FW_ENOTCONN     128     /* lwIP ERR_CONN: the connection is gone */
+
+/* the host's codes from vice_network_get_errorcode() that need telling apart */
+#ifdef WINDOWS_COMPILE
+#define HOST_EWOULDBLOCK    10035   /* WSAEWOULDBLOCK */
+#define HOST_ECONNABORTED   10053   /* WSAECONNABORTED */
+#define HOST_ECONNREFUSED   10061   /* WSAECONNREFUSED */
+#else
+#include <errno.h>
+#define HOST_EWOULDBLOCK    EWOULDBLOCK
+#define HOST_ECONNABORTED   ECONNABORTED
+#define HOST_ECONNREFUSED   ECONNREFUSED
+#endif
+
+/* the interface's address (GET_IPADDR / SET_IPADDR): IP, netmask, gateway */
+static uint8_t ip_config[12];
+
+/* a READ_SOCKET waiting for data (the interface is busy meanwhile) */
+static alarm_t *wait_alarm = NULL;
+static int wait_active;
+static int wait_handle, wait_want, wait_no_reply;
+static CLOCK wait_end;                  /* cycle the wait gives up at */
 
 /* DOS: a tiny in-memory file system */
 typedef struct {
@@ -208,14 +284,111 @@ static void arg_string(int at, char *out, int size)
 /* ---------------------------------------------------------------------*/
 /* network target (3) */
 
+/* close the socket in a slot (0-based) and forget its UDP peer */
+static void net_close_slot(int slot)
+{
+    if (sockets[slot]) {
+        vice_network_socket_close(sockets[slot]);
+        sockets[slot] = NULL;
+    }
+    if (udp_peer[slot]) {
+        vice_network_address_close(udp_peer[slot]);
+        udp_peer[slot] = NULL;
+    }
+    broken_errno[slot] = broken_in_queue[slot] = broken_pending[slot] = 0;
+}
+
+/* The host broke the TCP connection in a slot: from now on it answers as lwIP does
+   (see broken_errno). host_code: vice_network_get_errorcode() of the failed call. */
+static void net_break(int slot, int host_code)
+{
+    if (broken_errno[slot]) {
+        return;
+    }
+    broken_errno[slot] = (host_code == HOST_ECONNABORTED) ? FW_ECONNABORTED : FW_ECONNRESET;
+    broken_in_queue[slot] = 1;
+    broken_pending[slot] = 1;
+    log_message(uci_log, "socket %d: connection broken (host error %d), answers errno %d",
+                slot + 1, host_code, broken_errno[slot]);
+}
+
+/* the errno a READ on a broken connection gets (and uses up) */
+static int net_broken_read_errno(int slot)
+{
+    if (broken_in_queue[slot]) {
+        broken_in_queue[slot] = 0;
+        return broken_errno[slot];
+    }
+    if (broken_pending[slot]) {
+        broken_pending[slot] = 0;
+        return broken_errno[slot];
+    }
+    return FW_ENOTCONN;
+}
+
+/* the errno a WRITE on a broken connection gets (and uses up) */
+static int net_broken_write_errno(int slot)
+{
+    if (broken_pending[slot]) {
+        broken_pending[slot] = 0;
+        return broken_errno[slot];
+    }
+    return FW_ENOTCONN;
+}
+
+/* the errno a failed TCP connect gives on the firmware: a refused connect is a
+   reset to lwIP; anything else (no answer, no route) ends in lwIP's SYN timeout */
+static int net_connect_errno(int host_code)
+{
+    return (host_code == HOST_ECONNREFUSED) ? FW_ECONNRESET : FW_ECONNABORTED;
+}
+
+/* parse "ip[/netmask[/gateway]]" into ip_config; a missing netmask is
+   255.255.255.0, a missing gateway the address with .1 at the end */
+static int parse_ip_config(const char *text, uint8_t *out)
+{
+    unsigned int v[12] = { 0, 0, 0, 0, 255, 255, 255, 0, 0, 0, 0, 1 };
+    int n, i;
+
+    if (text == NULL) {
+        return -1;
+    }
+    n = sscanf(text, "%u.%u.%u.%u/%u.%u.%u.%u/%u.%u.%u.%u",
+               &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7],
+               &v[8], &v[9], &v[10], &v[11]);
+    if (n != 4 && n != 8 && n != 12) {
+        return -1;
+    }
+    if (n < 12) {
+        v[8] = v[0];
+        v[9] = v[1];
+        v[10] = v[2];
+        v[11] = 1;
+    }
+    for (i = 0; i < 12; i++) {
+        if (v[i] > 255) {
+            return -1;
+        }
+        out[i] = (uint8_t)v[i];
+    }
+    return 0;
+}
+
+/* stop a READ_SOCKET wait without answering it */
+static void wait_cancel(void)
+{
+    if (wait_active) {
+        alarm_unset(wait_alarm);
+        wait_active = 0;
+    }
+}
+
 static void net_close_all(void)
 {
     int i;
+    wait_cancel();
     for (i = 0; i < MAX_SOCKETS; i++) {
-        if (sockets[i]) {
-            vice_network_socket_close(sockets[i]);
-            sockets[i] = NULL;
-        }
+        net_close_slot(i);
     }
 }
 
@@ -235,6 +408,157 @@ static void parse_mac(uint8_t *mac)
     for (i = 0; i < 6; i++) {
         mac[i] = (uint8_t)b[i];
     }
+}
+
+/* READ_SOCKET's answer when nothing came: length $FFFF (-1) and "02,NO DATA: errno"
+   (11 = EWOULDBLOCK after the timeout, 9 = EBADF for a socket that isn't open) */
+static void net_read_no_data(int err)
+{
+    uint8_t head[2] = { 0xff, 0xff };
+    char text[32];
+
+    reply_add(head, 2);
+    snprintf(text, sizeof text, "02,NO DATA: %d", err);
+    set_status(text);
+}
+
+/* Try to answer a READ_SOCKET now. Returns 1 when it is answered (data, closed,
+   or a socket that isn't open), 0 when nothing has arrived yet. */
+static int net_read_try(int handle, int want)
+{
+    vice_network_socket_t *s = net_socket(handle);
+    int slot = handle - 1, got, copied;
+    uint8_t buf[READ_MAX], head[2];
+    char text[48];
+
+    if (s == NULL) {
+        net_read_no_data(FW_EBADF);
+        return 1;
+    }
+    if (broken_errno[slot]) {
+        /* a broken connection answers at once, with no wait (lwIP: queue closed) */
+        net_read_no_data(net_broken_read_errno(slot));
+        return 1;
+    }
+    if (vice_network_select_poll_one(s) <= 0) {
+        return 0;
+    }
+
+    if (udp_peer[slot] != NULL) {
+        /* UDP: take the whole datagram, hand out as much as was asked for */
+        if (datagram == NULL) {
+            datagram = lib_malloc(DATAGRAM_MAX);
+        }
+        got = (int)vice_network_receive_from(s, datagram, DATAGRAM_MAX, 0);
+        if (got < 0) {
+            /* Windows: an ICMP "port unreachable" from an earlier send.
+               lwIP ignores those, so it counts as nothing received. */
+            return 0;
+        }
+        if (got == 0) {
+            head[0] = head[1] = 0;
+            reply_add(head, 2);
+            if (uci_empty_closes) {
+                /* firmware 3.15a treats an empty datagram as a closed peer */
+                net_close_slot(slot);
+                log_message(uci_log, "socket %d: empty datagram, closed (as firmware 3.15a)", handle);
+                set_status("01,CONNECTION CLOSED BY HOST");
+            } else {
+                /* later firmware (commit dc1c298a): it is data, of length 0 */
+                set_status("00,OK");
+            }
+            return 1;
+        }
+        copied = got > want ? want : got;
+        head[0] = (uint8_t)(copied & 0xff);
+        head[1] = (uint8_t)(copied >> 8);
+        reply_add(head, 2);
+        reply_add(datagram, copied);
+        if (got > want) {
+            snprintf(text, sizeof text, "04,DATAGRAM TRUNCATED: %d", got);
+            set_status(text);
+        } else {
+            set_status("00,OK");
+        }
+        return 1;
+    }
+
+    /* TCP: as much of the stream as fits */
+    got = (int)vice_network_receive(s, buf, (size_t)want, 0);
+    if (got < 0) {
+        int code = vice_network_get_errorcode();
+        if (code == HOST_EWOULDBLOCK) {
+            return 0;
+        }
+        /* reset or aborted: the socket stays open with the error, as in lwIP */
+        net_break(slot, code);
+        net_read_no_data(net_broken_read_errno(slot));
+        return 1;
+    }
+    if (got == 0) {
+        /* closed by the peer (FIN): the firmware closes the socket */
+        net_close_slot(slot);
+        head[0] = head[1] = 0;
+        reply_add(head, 2);
+        log_message(uci_log, "socket %d closed by the host", handle);
+        set_status("01,CONNECTION CLOSED BY HOST");
+        return 1;
+    }
+    head[0] = (uint8_t)(got & 0xff);
+    head[1] = (uint8_t)(got >> 8);
+    reply_add(head, 2);
+    reply_add(buf, got);
+    set_status("00,OK");
+    return 1;
+}
+
+/* The answer of a command is ready: hand it out, or drop it when none was wanted. */
+static void finish_command(int no_reply)
+{
+    if (no_reply) {
+        to_idle();
+        return;
+    }
+    cmd_len = 0;
+    show_block();
+}
+
+/* the read wait's alarm: check the socket, answer when data came or time is up */
+static void wait_alarm_handler(CLOCK offset, void *data)
+{
+    if (!wait_active) {
+        alarm_unset(wait_alarm);
+        return;
+    }
+    if (net_read_try(wait_handle, wait_want)) {
+        alarm_unset(wait_alarm);
+        wait_active = 0;
+        finish_command(wait_no_reply);
+    } else if (maincpu_clk >= wait_end) {
+        alarm_unset(wait_alarm);
+        wait_active = 0;
+        net_read_no_data(FW_EWOULDBLOCK);
+        finish_command(wait_no_reply);
+    } else {
+        alarm_set(wait_alarm, maincpu_clk + WAIT_POLL);
+    }
+}
+
+/* start a READ_SOCKET wait: the interface is busy until wait_alarm_handler answers */
+static void wait_start(int handle, int want)
+{
+    CLOCK cycles = (CLOCK)((double)machine_get_cycles_per_second() * uci_read_wait / 1000.0);
+
+    if (wait_alarm == NULL) {
+        wait_alarm = alarm_new(maincpu_alarm_context, "UltimateUCIReadWait", wait_alarm_handler, NULL);
+    }
+    wait_active = 1;
+    wait_handle = handle;
+    wait_want = want;
+    wait_no_reply = (cmd[0] & NO_REPLY) != 0;
+    wait_end = maincpu_clk + cycles;
+    alarm_set(wait_alarm, maincpu_clk + (cycles < WAIT_POLL ? cycles : WAIT_POLL));
+    state = ST_BUSY;
 }
 
 static void net_command(void)
@@ -264,14 +588,27 @@ static void net_command(void)
                 reply_add(mac, 6);
                 set_status("00,OK");
             } else {
-                static const uint8_t ip[12] = { 192, 168, 64, 64, 255, 255, 255, 0, 192, 168, 64, 1 };
-                reply_add(ip, 12);
+                reply_add(ip_config, 12);       /* -uciip, or the last SET_IPADDR */
                 set_status("00,OK");
             }
             break;
         }
+        case 0x06:  /* SET_IPADDR: interface, IP, netmask, gateway (4 bytes each) */
+            if (cmd_len != 15) {
+                set_status("81,INVALID PARAMS");
+            } else if (cmd[2] != 0) {
+                set_status("82,PARAMETER(S) OUT OF RANGE");
+            } else {
+                /* the Ultimate's own setting: it outlives a C64 reset */
+                memcpy(ip_config, cmd + 3, 12);
+                log_message(uci_log, "SET_IPADDR %d.%d.%d.%d/%d.%d.%d.%d/%d.%d.%d.%d",
+                            cmd[3], cmd[4], cmd[5], cmd[6], cmd[7], cmd[8], cmd[9], cmd[10],
+                            cmd[11], cmd[12], cmd[13], cmd[14]);
+                set_status("00,OK");
+            }
+            break;
         case 0x07:  /* OPEN_TCP */
-        case 0x08: { /* OPEN_UDP (TCP only here) */
+        case 0x08: { /* OPEN_UDP */
             char host[256], addr[264];
             int port, slot;
             vice_network_socket_address_t *sa;
@@ -279,10 +616,6 @@ static void net_command(void)
 
             if (cmd_len < 5) {
                 set_status("81,INVALID PARAMS");
-                break;
-            }
-            if (cmd[1] == 0x08) {
-                set_status("85,ERROR OPENING SOCKET");
                 break;
             }
             port = cmd[2] | (cmd[3] << 8);
@@ -296,17 +629,45 @@ static void net_command(void)
             snprintf(addr, sizeof addr, "ip4://%s", host);   /* lwIP: IPv4 only */
             sa = vice_network_address_generate(addr, (unsigned short)port);
             if (sa == NULL) {
-                log_message(uci_log, "OPEN_TCP %s:%d: unresolved host", host, port);
+                log_message(uci_log, "OPEN_%s %s:%d: unresolved host",
+                            cmd[1] == 0x08 ? "UDP" : "TCP", host, port);
                 set_status("84,UNRESOLVED HOST");
                 break;
             }
-            s = vice_network_client(sa);
-            vice_network_address_close(sa);
-            if (s == NULL) {
-                log_message(uci_log, "OPEN_TCP %s:%d: connect failed", host, port);
-                set_status("11,ERROR ON CONNECT: 104");
+            if (cmd[1] == 0x08) {
+                /* UDP: bound to any local port, so a READ before the first WRITE
+                   works; the address given is where every WRITE goes */
+                vice_network_socket_address_t *local = vice_network_address_generate("ip4://", 0);
+                s = local ? vice_network_udp_open(local) : NULL;
+                if (local) {
+                    vice_network_address_close(local);
+                }
+                if (s == NULL) {
+                    vice_network_address_close(sa);
+                    log_message(uci_log, "OPEN_UDP %s:%d: no socket", host, port);
+                    set_status("85,ERROR OPENING SOCKET");
+                    break;
+                }
+                sockets[slot] = s;
+                udp_peer[slot] = sa;
+                {
+                    uint8_t handle = (uint8_t)(slot + 1);
+                    reply_add(&handle, 1);
+                }
+                log_message(uci_log, "OPEN_UDP %s:%d -> socket %d", host, port, slot + 1);
+                set_status("00,OK");
                 break;
             }
+            s = vice_network_client(sa);
+            if (s == NULL) {
+                int code = vice_network_get_errorcode();
+                vice_network_address_close(sa);
+                log_message(uci_log, "OPEN_TCP %s:%d: connect failed (host error %d)", host, port, code);
+                snprintf(text, sizeof text, "11,ERROR ON CONNECT: %d", net_connect_errno(code));
+                set_status(text);
+                break;
+            }
+            vice_network_address_close(sa);
             sockets[slot] = s;
             {
                 uint8_t handle = (uint8_t)(slot + 1);
@@ -327,16 +688,13 @@ static void net_command(void)
                 set_status("12,ERROR ON CLOSE: 9");
                 break;
             }
-            vice_network_socket_close(s);
-            sockets[cmd[2] - 1] = NULL;
+            net_close_slot(cmd[2] - 1);
             log_message(uci_log, "CLOSE_SOCKET %d", cmd[2]);
             set_status("00,OK");
             break;
         }
-        case 0x10: { /* READ_SOCKET */
-            vice_network_socket_t *s;
-            int want, got;
-            uint8_t buf[READ_MAX], head[2];
+        case 0x10: { /* READ_SOCKET: handle, length lo, hi */
+            int want;
 
             if (cmd_len != 5) {
                 set_status("81,INVALID PARAMS");
@@ -347,45 +705,47 @@ static void net_command(void)
                 set_status("82,PARAMETER(S) OUT OF RANGE");
                 break;
             }
-            s = net_socket(cmd[2]);
-            if (s == NULL || vice_network_select_poll_one(s) <= 0) {
-                /* nothing waiting (the firmware waits 40 ms first; we don't) */
-                head[0] = head[1] = 0xff;
-                reply_add(head, 2);
-                set_status("02,NO DATA: 11");
+            if (net_read_try(cmd[2], want)) {
                 break;
             }
-            got = (int)vice_network_receive(s, buf, (size_t)want, 0);
-            if (got <= 0) {
-                /* closed by the host (or reset): socket gone */
-                vice_network_socket_close(s);
-                sockets[cmd[2] - 1] = NULL;
-                head[0] = head[1] = 0;
-                reply_add(head, 2);
-                log_message(uci_log, "socket %d closed by the host", cmd[2]);
-                set_status("01,CONNECTION CLOSED BY HOST");
+            if (uci_read_wait > 0) {
+                /* nothing yet: stay busy until data comes or the timeout passes */
+                wait_start(cmd[2], want);
                 break;
             }
-            head[0] = (uint8_t)(got & 0xff);
-            head[1] = (uint8_t)(got >> 8);
-            reply_add(head, 2);
-            reply_add(buf, got);
-            set_status("00,OK");
+            net_read_no_data(FW_EWOULDBLOCK);
             break;
         }
         case 0x11: { /* WRITE_SOCKET */
             vice_network_socket_t *s = (cmd_len >= 3) ? net_socket(cmd[2]) : NULL;
-            int n = cmd_len - 3, sent = -1;
+            int n = cmd_len - 3, sent = -1, err = FW_EBADF, slot = cmd[2] - 1;
             uint8_t head[2];
 
-            if (s != NULL && n >= 0) {
+            if (s != NULL && n >= 0 && udp_peer[slot] != NULL) {
+                /* UDP: one write, one datagram (an empty one too, as lwip_send).
+                   lwIP reports no failure of its own here: a datagram the host
+                   can't send is lost, as one lwIP can't deliver is. */
+                sent = (int)vice_network_send_to(s, cmd + 3, (size_t)n, 0, udp_peer[slot]);
+                if (sent < 0) {
+                    log_message(uci_log, "socket %d: datagram not sent (host error %d)",
+                                cmd[2], vice_network_get_errorcode());
+                    sent = n;
+                }
+            } else if (s != NULL && n >= 0 && broken_errno[slot]) {
+                err = net_broken_write_errno(slot);
+            } else if (s != NULL && n >= 0) {
                 sent = n ? (int)vice_network_send(s, cmd + 3, (size_t)n, 0) : 0;
+                if (sent < 0) {
+                    net_break(slot, vice_network_get_errorcode());
+                    err = net_broken_write_errno(slot);
+                }
             }
             head[0] = (uint8_t)(sent & 0xff);
             head[1] = (uint8_t)((sent >> 8) & 0xff);
             reply_add(head, 2);
             if (sent < 0) {
-                set_status("12,SEND ERROR: 9");
+                snprintf(text, sizeof text, "12,SEND ERROR: %d", err);
+                set_status(text);
             } else {
                 set_status("00,OK");
             }
@@ -660,12 +1020,10 @@ static void run_command(void)
             }
             break;
     }
-    if (cmd[0] & NO_REPLY) {
-        to_idle();
-        return;
+    if (wait_active) {
+        return;                         /* READ_SOCKET waits; its alarm finishes it */
     }
-    cmd_len = 0;
-    show_block();
+    finish_command(cmd[0] & NO_REPLY);
 }
 
 static uint8_t status_byte(void)
@@ -734,6 +1092,7 @@ static void uci_store(uint16_t addr, uint8_t value)
         error_flag = 0;
     }
     if (value & CTL_ABORT) {
+        wait_cancel();
         to_idle();
         data_acc_flag = 0;
         return;
@@ -763,12 +1122,24 @@ static int uci_dump(void)
     mon_out("UCI state %02x, command %d bytes, block %d/%d, status \"%.*s\" (%d/%d)\n",
             (unsigned int)state, cmd_len, block_ptr, block_len, status_len, status_text,
             status_ptr, status_len);
+    if (wait_active) {
+        mon_out("READ_SOCKET %d waiting, %ld cycles left\n", wait_handle,
+                (long)(wait_end - maincpu_clk));
+    }
     return 0;
 }
 
 void ultimate_uci_reset(void)
 {
     /* as on the Ultimate: a C64 reset closes all sockets and drops any answer */
+    int i, open = 0, waiting = wait_active;
+    for (i = 0; i < MAX_SOCKETS; i++) {
+        open += sockets[i] != NULL;
+    }
+    if (open || waiting) {
+        log_message(uci_log, "reset: %d socket(s) closed%s", open,
+                    waiting ? ", READ wait cancelled" : "");
+    }
     net_close_all();
     dos_close();
     to_idle();
@@ -817,6 +1188,19 @@ static int set_uci_product(const char *val, void *param)
     return 0;
 }
 
+/* -uciip: the address GET_IPADDR reports until a SET_IPADDR changes it */
+static int set_uci_ip(const char *val, void *param)
+{
+    uint8_t parsed[12];
+
+    if (parse_ip_config(val, parsed) < 0) {
+        return -1;
+    }
+    memcpy(ip_config, parsed, 12);
+    util_string_set(&uci_ip, val);
+    return 0;
+}
+
 static int set_uci_load_config(int val, void *param)
 {
     uci_load_config = val ? 1 : 0;
@@ -829,6 +1213,21 @@ static int set_uci_temp_fs(int val, void *param)
     return 0;
 }
 
+static int set_uci_empty_closes(int val, void *param)
+{
+    uci_empty_closes = val ? 1 : 0;
+    return 0;
+}
+
+static int set_uci_read_wait(int val, void *param)
+{
+    if (val < 0 || val > 10000) {
+        return -1;
+    }
+    uci_read_wait = val;
+    return 0;
+}
+
 static const resource_int_t resources_int[] = {
     { "UltimateUCI", 0, RES_EVENT_STRICT, (resource_value_t)0,
       &uci_enabled, set_uci_enabled, NULL },
@@ -836,6 +1235,10 @@ static const resource_int_t resources_int[] = {
       &uci_load_config, set_uci_load_config, NULL },
     { "UltimateUCITempFS", 1, RES_EVENT_NO, NULL,
       &uci_temp_fs, set_uci_temp_fs, NULL },
+    { "UltimateUCIEmptyCloses", 0, RES_EVENT_NO, NULL,
+      &uci_empty_closes, set_uci_empty_closes, NULL },
+    { "UltimateUCIReadWait", 40, RES_EVENT_NO, NULL,
+      &uci_read_wait, set_uci_read_wait, NULL },
     RESOURCE_INT_LIST_END
 };
 
@@ -844,6 +1247,8 @@ static const resource_string_t resources_string[] = {
       &uci_mac, set_uci_mac, NULL },
     { "UltimateUCIProduct", "Ultimate 64 Elite", RES_EVENT_NO, NULL,
       &uci_product, set_uci_product, NULL },
+    { "UltimateUCIIP", "192.168.64.64", RES_EVENT_NO, NULL,
+      &uci_ip, set_uci_ip, NULL },
     RESOURCE_STRING_LIST_END
 };
 
@@ -858,10 +1263,14 @@ int ultimate_uci_resources_init(void)
 void ultimate_uci_resources_shutdown(void)
 {
     net_close_all();
+    lib_free(datagram);
+    datagram = NULL;
     lib_free(uci_mac);
     uci_mac = NULL;
     lib_free(uci_product);
     uci_product = NULL;
+    lib_free(uci_ip);
+    uci_ip = NULL;
 }
 
 static const cmdline_option_t cmdline_options[] =
@@ -878,6 +1287,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-uciproduct", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, "UltimateUCIProduct", NULL,
       "<name>", "Product name GET_HWINFO reports (e.g. \"Ultimate 64 Elite\", \"Ultimate II+\")" },
+    { "-uciip", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, "UltimateUCIIP", NULL,
+      "<ip[/netmask[/gateway]]>", "Address GET_IPADDR reports until SET_IPADDR changes it (netmask 255.255.255.0 and gateway x.x.x.1 by default)" },
     { "-uciloadconfig", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, "UltimateUCILoadConfig", (resource_value_t)1,
       NULL, "Control target knows LOAD_CONFIG $50 (firmware 3.15 and later)" },
@@ -890,6 +1302,15 @@ static const cmdline_option_t cmdline_options[] =
     { "+ucitempfs", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, "UltimateUCITempFS", (resource_value_t)0,
       NULL, "Opening a new file in /Temp fails (\"NO FILESYSTEM\", U64 firmware 3.15a)" },
+    { "-uciemptyclose", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, "UltimateUCIEmptyCloses", (resource_value_t)1,
+      NULL, "An empty UDP datagram closes the socket (firmware 3.15a)" },
+    { "+uciemptyclose", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, "UltimateUCIEmptyCloses", (resource_value_t)0,
+      NULL, "An empty UDP datagram is a 0-byte read, the socket stays open (later firmware)" },
+    { "-ucireadwait", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, "UltimateUCIReadWait", NULL,
+      "<ms>", "READ_SOCKET with no data stays busy this long, as the firmware's 40 ms receive timeout (0 = answer at once)" },
     CMDLINE_LIST_END
 };
 

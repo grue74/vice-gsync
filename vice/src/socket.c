@@ -516,7 +516,15 @@ vice_network_socket_t * vice_network_client(const vice_network_socket_address_t 
 
     if (error) {
         if (sockfd != INVALID_SOCKET) {
+            /* keep connect()'s error for vice_network_get_errorcode():
+               closesocket() clears it on Windows */
+            int connect_error = ARCHDEP_SOCKET_ERROR;
             closesocket(sockfd);
+#ifdef WINDOWS_COMPILE
+            WSASetLastError(connect_error);
+#else
+            errno = connect_error;
+#endif
         }
         sockfd = INVALID_SOCKET;
     }
@@ -907,6 +915,10 @@ vice_network_socket_address_t * vice_network_address_generate(const char * addre
 {
     vice_network_socket_address_t * socket_address = NULL;
     int error = 1;
+
+    /* the network must be up before a name can be resolved (Windows: WSAStartup,
+       else gethostbyname fails until some socket has been opened) */
+    socket_init();
 
     do {
         socket_address = vice_network_alloc_new_socket_address();
