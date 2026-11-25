@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>6581 Filter Slider Guide</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a bench reference sheet; six small cutoff-curve plots in a two-column grid, then the sliders that leave the curve alone and a tuning order. */
+:root {
+  --bg: #f5f6f4;
+  --panel: #ffffff;
+  --ink: #1c1d1b;
+  --ink-2: #53564f;
+  --ink-3: #8a8d85;
+  --rule: #dcdfd8;
+  --grid: #ebede7;
+  --default: #a3a69d;
+  --lo: #86b6ef;
+  --mid: #2a78d6;
+  --hi: #104281;
+  --chip: #e6eefa;
+  --chip-ink: #1c5cab;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151615; --panel: #1c1d1b; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f9188;
+    --rule: #32342f; --grid: #262824; --default: #6e7169;
+    --lo: #1c5cab; --mid: #3987e5; --hi: #9ec5f4; --chip: #1d2a3c; --chip-ink: #9ec5f4;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151615; --panel: #1c1d1b; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f9188;
+  --rule: #32342f; --grid: #262824; --default: #6e7169;
+  --lo: #1c5cab; --mid: #3987e5; --hi: #9ec5f4; --chip: #1d2a3c; --chip-ink: #9ec5f4;
+  color-scheme: dark;
+}
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); line-height: 1.5; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 24px; }
+h1 { font-size: 1.6rem; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-2); max-width: 70ch; margin-top: 6px; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .85rem; color: var(--ink-2); margin-top: 12px; }
+.key span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 22px; border-top: 2px solid; display: inline-block; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.chip { font-size: .74rem; font-weight: 500; letter-spacing: .03em; text-transform: uppercase; background: var(--chip); color: var(--chip-ink); padding: 2px 8px; border-radius: 99px; }
+.leg { display: flex; gap: 14px; font-family: var(--f-mono); font-size: .76rem; color: var(--ink-2); flex-wrap: wrap; }
+.leg span { display: inline-flex; align-items: center; gap: 6px; }
+.why { color: var(--ink-2); font-size: .9rem; }
+.why b { color: var(--ink); font-weight: 500; }
+.plot { position: relative; }
+svg { display: block; width: 100%; height: auto; }
+svg text { font-family: var(--f-mono); font-size: 10px; fill: var(--ink-3); }
+.tip { position: absolute; top: 6px; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 5px;
+  padding: 6px 8px; font-family: var(--f-mono); font-size: .74rem; white-space: nowrap; box-shadow: 0 4px 12px rgb(0 0 0 / .12); font-variant-numeric: tabular-nums; }
+.tip i { display: inline-block; width: 10px; border-top: 2px solid; margin-right: 6px; vertical-align: middle; }
+.tablebox { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 500; color: var(--ink-2); font-size: .8rem; letter-spacing: .02em; }
+td:first-child { white-space: nowrap; font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+ol { margin: 6px 0 0; padding-left: 1.3em; color: var(--ink-2); display: grid; gap: 4px; max-width: 75ch; }
+ol b { color: var(--ink); font-weight: 500; }
+.foot { color: var(--ink-3); font-size: .8rem; max-width: 80ch; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>6581 filter sliders: what moves where</h1>
+    <p class="lede">Each plot shows the reSIDfp 6581 cutoff frequency against the FC register (0 to 2047) while one slider changes and the rest stay at your "6581R4 (3 tunes, v2)" values, with the knots at 0. The cutoff scale is logarithmic, so equal heights mean equal musical intervals.</p>
+    <div class="key">
+      <span><i class="sw" style="border-color:var(--lo)"></i>lower value</span>
+      <span><i class="sw" style="border-color:var(--mid);border-top-width:3px"></i>your value</span>
+      <span><i class="sw" style="border-color:var(--hi)"></i>higher value</span>
+      <span><i class="sw" style="border-color:var(--default);border-top-style:dashed"></i>reSIDfp default</span>
+    </div>
+  </header>
+
+  <section class="grid" id="grid"></section>
+
+  <section style="display:flex;flex-direction:column;gap:10px">
+    <h2>Sliders that leave the cutoff curve where it is</h2>
+    <div class="tablebox"><table>
+      <tr><th>Slider</th><th>What it changes</th><th>Why the curve stays</th></tr>
+      <tr><td>Resonance Q</td><td>Height of the resonance peak at every resonance value, 15 included.</td><td>It speeds one integrator up and slows the other down by the same factor. The cutoff depends on their product, the Q on their ratio.</td></tr>
+      <tr><td>Resonance strength</td><td>How much each resonance register step adds. No effect at resonance 15 on the 6581.</td><td>It scales the feedback ladder, which sets Q, not the integrator speed.</td></tr>
+      <tr><td>Filter caps C1/C2, opposite</td><td>Resonance, a little (C2 up and C1 down gives more).</td><td>The cutoff follows C1 × C2, so opposite changes cancel. Moving both the same way does move the curve, like Filter range.</td></tr>
+      <tr><td>Wave offset</td><td>The DC level of the voices going into the filter: distortion, and how loud volume-register clicks and digis are.</td><td>It acts on the signal, not on the cutoff control voltage.</td></tr>
+      <tr><td>Combined waves</td><td>How the mixed waveforms (e.g. $51, $61) sound.</td><td>Waveform generator only.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>A tuning order that works</h2>
+    <ol>
+      <li><b>Snake resistor</b> for the lowest cutoff: listen to a closed filter, low FC.</li>
+      <li><b>Filter range</b> to bring the whole curve up or down together.</li>
+      <li><b>Filter curve</b> for where the filter starts to open as FC rises.</li>
+      <li><b>Op-amp gain</b> for how fast it opens through the middle.</li>
+      <li><b>DAC kink</b> if sweeps jump audibly at FC 512 or 1024.</li>
+      <li><b>Knots</b> for whatever bend is left, one region at a time.</li>
+      <li><b>Resonance Q</b> last: it no longer moves anything above.</li>
+    </ol>
+  </section>
+
+  <p class="foot">Cutoffs are estimated at full signal level with the same method as the VSID graph (within about 15 % of a measurement). Low in the curve the 6581 cutoff also depends on the signal level. PAL clock.</p>
+</div>
+
+<script>
+const D = {"fc":[0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240,255,256,272,288,304,320,336,352,368,384,400,416,432,448,464,480,496,511,512,528,544,560,576,592,608,624,640,656,672,688,704,720,736,752,767,768,784,800,816,832,848,864,880,896,912,928,944,960,976,992,1008,1023,1024,1040,1056,1072,1088,1104,1120,1136,1152,1168,1184,1200,1216,1232,1248,1264,1279,1280,1296,1312,1328,1344,1360,1376,1392,1408,1424,1440,1456,1472,1488,1504,1520,1535,1536,1552,1568,1584,1600,1616,1632,1648,1664,1680,1696,1712,1728,1744,1760,1776,1791,1792,1808,1824,1840,1856,1872,1888,1904,1920,1936,1952,1968,1984,2000,2016,2032,2047],"default":[361,377,394,413,431,454,478,507,524,558,591,630,664,708,752,801,856,809,861,913,1034,1109,1224,1323,1464,1554,1699,1843,1994,2137,2295,2474,2639,2827,2526,2686,2858,3053,3196,3363,3563,3741,3873,4075,4242,4463,4650,4823,5039,5251,5443,5243,5470,5623,5888,6035,6225,6429,6682,6772,6983,7167,7378,7568,7753,7959,8172,8391,7656,7890,8063,8279,8484,8660,8876,9066,9173,9367,9567,9802,9934,10154,10350,10572,10770,10576,10751,10954,11187,11361,11526,11729,11918,12052,12237,12416,12590,12755,12964,13130,13311,13494,13177,13348,13532,13723,13833,14041,14222,14410,14481,14671,14820,15039,15127,15307,15433,15613,15785,15667,15802,15972,16118,16217,16388,16539,16698,16782,16914,17041,17197,17310,17400,17545,17709,17832],"panels":[{"key":"curve","title":"Filter curve","base":"0.057","series":[{"v":"0.0","hz":[215,215,215,216,216,216,217,217,217,218,218,219,219,220,220,221,221,221,221,222,222,222,223,223,226,227,229,231,233,234,236,239,243,246,239,242,246,249,252,257,262,268,271,277,284,291,298,306,316,327,340,326,338,351,367,380,400,422,449,464,499,537,583,623,682,743,815,901,618,675,735,807,866,952,1036,1134,1179,1269,1353,1448,1520,1688,1816,2005,2199,1986,2176,2378,2584,2751,2999,3237,3454,3581,3864,4112,4373,4591,4900,5172,5446,5749,5177,5421,5690,6030,6260,6546,6859,7149,7291,7617,7923,8256,8490,8836,9138,9464,9798,9487,9797,10086,10440,10682,10998,11305,11649,11778,12145,12451,12772,13059,13392,13681,14019,14378]},{"v":"0.057","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"0.3","hz":[234,236,238,242,244,248,252,256,259,264,270,276,281,289,297,305,316,305,315,324,336,347,361,377,396,408,432,459,493,524,568,615,672,742,610,668,728,798,859,942,1025,1120,1166,1262,1342,1436,1506,1666,1814,1970,2176,1967,2177,2357,2538,2745,2992,3199,3457,3557,3835,4080,4356,4594,4830,5123,5421,5720,4538,4791,5076,5366,5644,5900,6194,6510,6657,6982,7235,7567,7819,8188,8431,8732,9142,8733,9067,9431,9722,9970,10290,10661,10934,11089,11463,11756,12096,12361,12642,12983,13327,13672,12950,13281,13586,13942,14205,14561,14805,15180,15345,15652,15930,16302,16539,16880,17173,17460,17823,17460,17788,18022,18337,18567,18891,19148,19456,19583,19908,20154,20430,20615,20944,21148,21418,21707]}]},{"key":"range","title":"Filter range","base":"0.749","series":[{"v":"0.5","hz":[152,153,153,154,154,154,154,155,155,155,156,156,156,156,157,157,157,157,157,158,158,159,161,162,164,165,167,169,171,173,176,178,182,186,178,181,185,189,193,197,202,208,211,217,223,231,238,247,257,270,286,269,284,300,320,339,366,395,431,450,495,540,593,638,700,763,833,911,631,692,754,823,882,960,1015,1079,1112,1216,1362,1445,1568,1728,1880,2019,2191,2015,2169,2331,2528,2636,2821,2981,3182,3298,3493,3676,3891,4029,4220,4438,4654,4863,4418,4654,4825,5032,5213,5428,5635,5820,5903,6154,6381,6588,6769,7008,7212,7394,7650,7382,7649,7860,8073,8230,8455,8642,8888,9011,9215,9395,9668,9833,10067,10280,10465,10702]},{"v":"0.749","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"1.0","hz":[293,293,294,294,295,296,296,297,297,298,299,299,300,300,301,303,306,303,305,308,310,312,314,317,321,322,326,330,335,339,345,351,358,367,350,357,365,374,381,391,401,413,419,434,448,464,479,500,523,550,585,549,582,617,660,700,758,817,892,930,1019,1108,1216,1301,1421,1522,1641,1763,1289,1404,1511,1623,1719,1845,1953,2166,2275,2451,2699,2924,3094,3382,3691,3982,4318,3982,4284,4576,4959,5190,5594,5889,6297,6438,6835,7237,7625,7948,8355,8674,9152,9566,8702,9090,9500,9898,10280,10642,11083,11460,11744,12160,12590,12997,13352,13789,14162,14627,15086,14635,15072,15477,15933,16256,16748,17082,17588,17787,18266,18653,19105,19458,19918,20317,20762,21156]}]},{"key":"snake","title":"Snake resistor","base":"0.778","series":[{"v":"0.5","hz":[140,141,141,141,142,142,142,142,143,143,143,144,144,144,144,145,145,145,145,145,146,147,149,150,152,153,155,157,159,161,164,167,171,175,167,170,174,179,182,187,192,198,200,207,214,222,229,240,252,267,288,267,286,306,333,358,396,435,485,512,572,634,706,766,850,934,1030,1098,757,839,921,1017,1069,1144,1221,1395,1482,1587,1820,1961,2168,2358,2593,2829,3103,2805,3057,3284,3570,3767,4051,4269,4570,4710,5035,5266,5613,5810,6122,6398,6740,7067,6359,6694,6978,7337,7573,7907,8192,8494,8682,9009,9334,9651,9887,10212,10540,10879,11237,10840,11191,11562,11840,12108,12406,12767,13073,13235,13596,13890,14228,14474,14828,15140,15443,15766]},{"v":"0.778","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"1.5","hz":[431,432,433,434,434,435,436,436,437,438,439,440,440,441,443,446,449,446,449,451,454,455,460,464,468,470,476,481,486,492,499,507,515,526,506,514,523,534,542,555,567,582,590,606,623,643,660,682,707,736,772,735,767,801,844,877,929,982,1045,1079,1154,1227,1317,1390,1493,1596,1706,1821,1378,1482,1584,1693,1773,1886,1986,2113,2170,2331,2488,2633,2823,3021,3175,3408,3647,3409,3636,3885,4098,4326,4578,4836,5126,5245,5523,5810,6085,6366,6657,6936,7180,7562,6893,7185,7459,7758,8017,8363,8649,8947,9123,9430,9759,10116,10369,10658,10936,11275,11655,11275,11580,11900,12239,12519,12846,13160,13530,13646,14005,14262,14622,14884,15181,15433,15831,16198]}]},{"key":"opamp","title":"Op-amp gain","base":"0.868","series":[{"v":"0.6","hz":[199,199,199,199,199,199,199,199,199,199,199,199,200,200,200,200,200,200,200,200,200,200,200,201,201,201,201,202,203,204,205,207,208,210,207,208,210,212,213,214,215,217,218,220,224,226,228,232,238,244,254,243,252,262,280,299,342,408,510,563,329,448,668,359,695,400,288,895,341,644,368,864,542,431,358,380,940,1092,1365,756,915,1404,1780,1565,1852,1487,2009,1835,2181,2093,2361,2514,2562,2601,2750,2838,3247,3582,3787,3942,4365,4570,3899,4406,4473,4905,5072,5421,5655,6021,6149,6454,6756,7140,7353,7747,8063,8332,8693,8333,8705,9021,9374,9680,9881,10213,10673,10744,11001,11338,11686,11944,12292,12587,12890,13306]},{"v":"0.868","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"1.3","hz":[240,241,242,243,244,244,246,247,247,252,255,258,260,265,270,274,281,274,280,286,292,299,306,314,323,328,338,348,359,369,382,395,409,426,394,409,423,441,455,476,497,520,533,561,591,623,651,690,729,772,823,770,817,865,916,960,1080,1158,1296,1374,1520,1668,1831,1980,2170,2363,2572,2807,1951,2152,2336,2548,2712,2930,3149,3401,3513,3775,4030,4302,4476,4769,5006,5325,5616,5326,5589,5885,6139,6426,6726,7006,7304,7471,7778,8084,8429,8653,8960,9270,9607,9976,9290,9611,9926,10230,10514,10829,11142,11488,11648,11986,12288,12644,12887,13220,13540,13866,14262,13872,14205,14513,14841,15115,15441,15756,16098,16250,16601,16869,17209,17467,17809,18097,18429,18779]}]},{"key":"dac","title":"DAC kink (2R/R)","base":"2.25","series":[{"v":"1.9","hz":[216,217,217,217,218,218,218,219,219,220,220,220,221,221,222,222,222,222,223,223,224,226,228,230,231,233,235,236,239,242,244,247,250,253,257,261,265,270,275,280,286,292,300,306,315,322,332,342,352,364,376,384,400,418,438,463,488,518,550,596,637,684,734,793,851,916,983,1049,1228,1290,1361,1433,1508,1601,1756,1861,2075,2176,2368,2478,2718,2864,3004,3246,3435,3522,3717,3932,4124,4354,4594,4790,5006,5323,5527,5754,5997,6260,6485,6696,6983,7198,7473,7717,7920,8197,8490,8743,8971,9230,9516,9804,10046,10292,10559,10823,11095,11387,11565,11760,11979,12235,12499,12760,13008,13285,13557,13824,14124,14354,14608,14922,15146,15400,15658,15894]},{"v":"2.25","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"2.6","hz":[216,217,217,218,218,219,219,220,220,221,221,222,222,222,223,225,228,223,225,227,230,231,234,236,240,240,244,248,253,256,262,268,276,286,256,262,268,276,281,290,299,310,310,323,336,352,362,385,407,438,483,407,438,470,515,543,605,661,741,741,835,919,1030,1095,1221,1305,1420,1571,750,843,927,1040,1103,1232,1314,1431,1431,1557,1729,1930,2078,2301,2496,2786,3162,2501,2802,3013,3347,3519,3864,4159,4460,4482,4808,5175,5500,5690,6055,6398,6819,7236,5726,6090,6395,6818,7024,7424,7754,8146,8142,8532,8864,9276,9509,9901,10279,10657,11172,10300,10657,11068,11476,11705,12094,12418,12838,12838,13299,13618,14016,14228,14660,15015,15391,15894]}]},{"key":"knot","title":"Curve knot at FC 768","base":"0","series":[{"v":"-200","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,259,261,264,266,268,271,274,274,278,280,284,286,290,293,298,302,293,306,320,338,356,381,411,452,484,544,614,705,792,911,1040,1187,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"0","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,262,267,274,278,286,293,302,306,316,326,338,348,363,379,399,424,399,422,447,478,507,548,592,647,677,742,811,888,955,1046,1134,1244,1323,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]},{"v":"200","hz":[216,217,217,218,218,218,219,220,220,220,221,221,221,222,222,223,223,223,223,225,228,229,231,233,235,236,239,242,246,249,253,257,262,268,257,265,274,284,294,307,321,339,353,378,408,447,488,548,620,711,822,739,776,807,845,864,905,942,987,985,1031,1071,1112,1134,1193,1233,1273,1327,945,1036,1121,1230,1287,1377,1467,1576,1677,1834,1978,2166,2348,2520,2759,3001,3246,2992,3226,3457,3705,3919,4192,4426,4722,4830,5172,5419,5723,5966,6259,6547,6857,7192,6508,6814,7155,7475,7683,7986,8319,8612,8802,9141,9423,9718,10005,10392,10657,10962,11366,10959,11303,11605,11987,12212,12515,12838,13198,13346,13666,13992,14365,14605,14922,15221,15556,15894]}]}]};
+const TEXT = {
+  curve: { chip: 'where it opens', why: '<b>Shifts the cutoff DAC\'s starting voltage.</b> Below a certain voltage the filter\'s control transistor (VCR) stays off and only the fixed snake resistor works, so the floor stays put. The slider moves the point where the VCR switches on and the curve takes off, and lifts everything above it. From 0.057 to 0.3 the cutoff at FC 768 goes from 0.4 to 2.0 kHz.' },
+  range: { chip: 'everything', why: '<b>Scales the strength of the filter transistors</b> (the model\'s uCox), the VCR and the snake together. The whole curve moves up or down by about the same ratio, floor and top included: 0.5 to 1.0 takes the floor from 150 to 290 Hz and the top from 10.7 to 21 kHz.' },
+  snake: { chip: 'the floor', why: '<b>Width of the fixed "snake" resistor</b> beside the VCR. When the VCR is off it carries all the current, so it sets the lowest cutoff: 0.5 to 1.5 takes FC 0 from 140 to 430 Hz. Higher up the VCR carries most of the current and the snake hardly matters.' },
+  opamp: { chip: 'the middle', why: '<b>Gain of the 6581\'s NMOS op-amps.</b> The integrators are lossy because these op-amps are weak; more gain lets the VCR current turn into cutoff more efficiently. It barely changes the floor, but the climb through the middle a lot: FC 1536 goes from 3.9 to 9.3 kHz.' },
+  dac: { chip: 'the steps', why: '<b>Resistor ratio of the 11-bit cutoff DAC.</b> At 2.00 the DAC is linear; above it each carry (FC 255→256, 511→512, 1023→1024) gives a drop. 2.6 makes FC 1023→1024 fall from 1.6 to 0.75 kHz; 1.9 turns the drop into a small rise. The rest of the curve barely moves.' },
+  knot: { chip: 'one spot', why: '<b>Adds a voltage to the cutoff DAC output at one FC value</b>, fading linearly to zero at the neighbouring knots (FC 512 and 1024 here). ±200 mV at FC 768 moves the cutoff there from 0.4 to 0.3 or 0.74 kHz and leaves the rest alone.' },
+};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const fmt = h => h >= 1000 ? (h / 1000).toFixed(h >= 10000 ? 1 : 2) + ' kHz' : Math.round(h) + ' Hz';
+const W = 440, H = 220, M = { l: 38, r: 8, t: 8, b: 22 };
+const pw = W - M.l - M.r, ph = H - M.t - M.b;
+const lmin = Math.log10(100), lmax = Math.log10(25000);
+const X = fc => M.l + fc / 2047 * pw;
+const Y = hz => M.t + ph * (1 - (Math.log10(Math.min(Math.max(hz, 100), 25000)) - lmin) / (lmax - lmin));
+const COLORS = ['--lo', '--mid', '--hi'];
+
+function path(v, svg, stroke, w, dash) {
+  const d = D.fc.map((fc, i) => `${i ? 'L' : 'M'}${X(fc).toFixed(1)},${Y(v[i]).toFixed(1)}`).join('');
+  el('path', { d, fill: 'none', stroke: css(stroke), 'stroke-width': w, 'stroke-dasharray': dash || 'none', 'stroke-linejoin': 'round' }, svg);
+}
+
+const grid = document.getElementById('grid');
+for (const p of D.panels) {
+  const t = TEXT[p.key];
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.innerHTML = `<div class="head"><h2>${p.title}</h2><span class="chip">moves ${t.chip}</span></div>
+    <div class="leg">${p.series.map((s, i) => `<span><i class="sw" style="border-color:var(${COLORS[i]});${s.v === p.base ? 'border-top-width:3px' : ''}"></i>${s.v}${p.key === 'knot' ? ' mV' : ''}${s.v === p.base ? ' (yours)' : ''}</span>`).join('')}</div>
+    <div class="plot"></div><p class="why">${t.why}</p>`;
+  grid.appendChild(card);
+  const host = card.querySelector('.plot');
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${p.title}: cutoff against FC` }, host);
+  for (const hz of [100, 200, 500, 1000, 2000, 5000, 10000, 20000]) {
+    el('line', { x1: M.l, x2: M.l + pw, y1: Y(hz), y2: Y(hz), stroke: css('--grid') }, svg);
+    el('text', { x: M.l - 5, y: Y(hz) + 3.5, 'text-anchor': 'end' }, svg).textContent = hz >= 1000 ? hz / 1000 + 'k' : hz;
+  }
+  for (let fc = 0; fc <= 2048; fc += 512) {
+    const f = Math.min(fc, 2047);
+    el('line', { x1: X(f), x2: X(f), y1: M.t, y2: M.t + ph, stroke: css('--grid') }, svg);
+    el('text', { x: X(f), y: H - 6, 'text-anchor': f === 0 ? 'start' : f === 2047 ? 'end' : 'middle' }, svg).textContent = f;
+  }
+  path(D.default, svg, '--default', 1.2, '4 3');
+  p.series.forEach((s, i) => { if (s.v !== p.base) path(s.hz, svg, COLORS[i], 1.6); });
+  p.series.forEach((s, i) => { if (s.v === p.base) path(s.hz, svg, COLORS[i], 2.6); });
+
+  const cross = el('line', { y1: M.t, y2: M.t + ph, stroke: css('--ink-3'), visibility: 'hidden' }, svg);
+  const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; host.appendChild(tip);
+  const hit = el('rect', { x: M.l, y: M.t, width: pw, height: ph, fill: 'transparent' }, svg);
+  hit.addEventListener('pointermove', ev => {
+    const r = svg.getBoundingClientRect();
+    const fcp = ((ev.clientX - r.left) / r.width * W - M.l) / pw * 2047;
+    let i = 0; while (i < D.fc.length - 1 && Math.abs(D.fc[i + 1] - fcp) < Math.abs(D.fc[i] - fcp)) i++;
+    const x = X(D.fc[i]);
+    cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.setAttribute('visibility', 'visible');
+    tip.innerHTML = `<div style="color:var(--ink-2)">FC ${D.fc[i]}</div>` +
+      p.series.map((s, j) => `<div><i style="border-color:var(${COLORS[j]})"></i>${s.v}${p.key === 'knot' ? ' mV' : ''}: ${fmt(s.hz[i])}</div>`).join('') +
+      `<div><i style="border-color:var(--default);border-top-style:dashed"></i>default: ${fmt(D.default[i])}</div>`;
+    tip.hidden = false;
+    const px = x / W * r.width, bw = tip.offsetWidth;
+    tip.style.left = (px + 12 + bw > r.width ? Math.max(0, px - 12 - bw) : px + 12) + 'px';
+  });
+  hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+}
+</script>
+</body>
+</html>

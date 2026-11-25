@@ -338,6 +338,11 @@ reSIDfp used one value for both capacitors.
   and samples both sides of every cutoff DAC carry (FC 255/256, 511/512,
   ...) so the DAC kink steps show.
   The mixer under the screen doesn't get the graph (no room).
+- **Slider guide**: [reSIDfp-6581-filter-guide.html](reSIDfp-6581-filter-guide.html)
+  shows, with measured curves, which 6581 slider moves which part of the
+  cutoff curve (snake = floor, range = everything, curve = where it opens,
+  op-amp = the middle, DAC kink = the steps, knots = one spot) and why,
+  which sliders leave the curve alone, and a tuning order.
 - **Own filter settings** ("My settings" on the VSID panel, "My filter
   settings" on Settings > Audio > SID): save every filter value (reSID and
   reSIDfp sliders, C1/C2, DAC ratio, snake, resonance strength, op-amp gain,
