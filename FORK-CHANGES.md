@@ -507,3 +507,23 @@ The measured frame rate in the status bar is shown with two decimals instead
 of one (PAL: 50.12 fps instead of 50.1), to see small speed differences. The
 value is averaged over 250 frames and smoothed, so the second decimal is
 steady.
+
+---
+
+## 11. MIDI: send bytes at the real wire speed
+
+File: `src/midi.c`
+
+**Why:** MIDI runs at 31250 baud with one start bit, eight data bits and one
+stop bit, so a byte takes 10 bit times on the wire. VICE's MIDI cartridges
+sent a byte every 9 bit times (upstream comment: to avoid buffer overflows
+with external devices whose clock is a bit off). That made the emulated
+interface about 11 % faster than any real one, so programs timed against the
+wire (a sequencer's clock, note bursts) measured better in VICE than they run
+on hardware. A real MC68B50 (Kerberos cartridge) was measured sending a byte
+every 315 PAL cycles, which is 10 bit times.
+
+**What:** `get_midi_ticks()` uses 10 bit times per byte
+(`MIDI_BITS_PER_BYTE`). Very large, fast SysEx transfers from a device with a
+fast clock could now overflow the receive buffer, as they would on real
+hardware.

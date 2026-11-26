@@ -176,10 +176,16 @@ and one stop bit, no parity.
 This would mean *10 below, but 9 is better if the frequency of external devices
 is a bit off, that avoids buffer overflows for very large and fast transfers
 (e.g. SysEx file transfers).
+
+Local patch (SidSynth, 2026-11-26): 10, the real wire. A real MC68B50 (a
+Kerberos cartridge, measured) sends a byte every 315 PAL cycles; 9 made VICE
+send ~11 % faster than any real interface, so programs timed against the wire
+(a sequencer's clock and bursts) measured better than they run.
 */
+#define MIDI_BITS_PER_BYTE 10
 static int get_midi_ticks(void)
 {
-    return (int)((machine_get_cycles_per_second() * 9) / 31250);
+    return (int)((machine_get_cycles_per_second() * MIDI_BITS_PER_BYTE) / 31250);
 }
 
 int midi_set_mode(int new_mode, void *param)
