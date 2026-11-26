@@ -30,7 +30,7 @@ make -j "$(sysctl -n hw.ncpu)"
 ```
 
 The emulators are in `vice/src/` (`x64sc`, `x128`, `vsid`, etc.).
-`vice/src/x64sc --version` prints the version without opening a window.
+`vice/src/x64sc --console --version` prints the version without initializing GTK.
 Add `--enable-x64` to configure to build the older `x64` emulator too.
 See [macOS build notes](vice/doc/building/macOS-Howto.txt) for installation,
 SDL2 and optional dependencies.
