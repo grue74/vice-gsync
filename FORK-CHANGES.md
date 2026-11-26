@@ -496,3 +496,14 @@ as the SDL UI already did. Before, GTK3 builds asked SDL for at least 1024
 samples per callback (over 20 ms at 48 kHz), which made frame delivery
 bursty. (The release build doesn't include SDL sound; measured with it, SDL
 was between `dx` and `wmm`.)
+
+---
+
+## 10. GTK3: refresh rate with two decimals
+
+File: `src/arch/gtk3/widgets/statusbarspeedwidget.c`
+
+The measured frame rate in the status bar is shown with two decimals instead
+of one (PAL: 50.12 fps instead of 50.1), to see small speed differences. The
+value is averaged over 250 frames and smoothed, so the second decimal is
+steady.
