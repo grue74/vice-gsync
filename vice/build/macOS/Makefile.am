@@ -1,2 +1,3 @@
 EXTRA_DIST = \
-	bindist.sh
+	bindist.sh \
+	install-deps.sh
