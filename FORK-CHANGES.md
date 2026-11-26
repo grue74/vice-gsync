@@ -527,3 +527,37 @@ every 315 PAL cycles, which is 10 bit times.
 (`MIDI_BITS_PER_BYTE`). Very large, fast SysEx transfers from a device with a
 fast clock could now overflow the receive buffer, as they would on real
 hardware.
+
+---
+
+## 12. Remote monitor: works with telnet clients (PuTTY)
+
+Files: `src/monitor/monitor_network.c`, `src/monitor/monitor_network.h`,
+`src/monitor/mon_util.c`
+
+**Why:** the text remote monitor (`-remotemonitor`, port 6510) only worked with
+raw clients such as netcat. A telnet client like PuTTY sends option
+negotiation (IAC sequences, some with zero bytes) as soon as it connects, sends
+Enter as CR LF or CR NUL and expects CR LF line ends back. VICE took the
+negotiation for typed text, so the first command was garbled and the zero bytes
+cut the line buffer short; output came out as a staircase. Two older bugs hit
+any client: a line that arrived in pieces (one key at a time) was thrown away,
+and of several lines sent at once (a paste) only the first ran until more input
+came.
+
+**What:**
+- A connection that sends an IAC byte is treated as telnet. Its telnet commands
+  are filtered out and every option is refused, so the client keeps its default
+  mode (local echo and line editing, whole lines sent). Output to it gets CR LF
+  line ends and a 0xff byte is sent twice.
+- Plain clients never send IAC, so their output is unchanged.
+- NUL bytes are dropped, and CR LF / CR NUL is one line end even when split
+  across two packets.
+- Received text is kept until a full line has arrived; buffered lines run
+  without waiting for more network data.
+- Telnet negotiation alone no longer stops the machine: the monitor opens on the
+  first real input, as with other clients.
+
+In PuTTY, use connection type **Telnet** (SSH hangs: PuTTY waits for an SSH
+greeting), port 6510. PuTTY's "Telnet negotiation mode" must be Active (the
+default); in Passive mode it sends no IAC and output is LF only.

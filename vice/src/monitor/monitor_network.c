@@ -53,11 +53,54 @@ static vice_network_socket_t * connected_socket = NULL;
 static char * monitor_server_address = NULL;
 static int monitor_enabled = 0;
 
+/* Received text waiting to be split into command lines. It is kept between
+   calls, so a line that arrives in pieces (one key at a time) is not lost. */
+static char cmd_buffer[260] = { 0 };
+static int cmd_bufferpos = 0;
+
+/* Telnet clients (PuTTY in telnet mode, telnet.exe) send option negotiation
+   (IAC sequences) and expect CR LF line ends. A connection is treated as telnet
+   once it sends an IAC byte; plain clients (netcat, scripts) never do, so for
+   them the output stays exactly as before. */
+#define TELNET_SE    240
+#define TELNET_SB    250
+#define TELNET_WILL  251
+#define TELNET_WONT  252
+#define TELNET_DO    253
+#define TELNET_DONT  254
+#define TELNET_IAC   255
+
+enum telnet_state_e {
+    TELNET_STATE_DATA,
+    TELNET_STATE_IAC,
+    TELNET_STATE_OPTION,
+    TELNET_STATE_SB,
+    TELNET_STATE_SB_IAC
+};
+
+static int telnet_client = 0;           /* client has sent telnet commands */
+static enum telnet_state_e telnet_state = TELNET_STATE_DATA;
+static unsigned char telnet_option_cmd = 0;
+static int input_last_cr = 0;           /* last received data byte was CR */
+static int output_last_cr = 0;          /* last sent byte was CR */
+
+/* forget everything about the previous connection */
+static void monitor_network_reset_connection_state(void)
+{
+    cmd_bufferpos = 0;
+    cmd_buffer[0] = 0;
+    telnet_client = 0;
+    telnet_state = TELNET_STATE_DATA;
+    telnet_option_cmd = 0;
+    input_last_cr = 0;
+    output_last_cr = 0;
+}
+
 int monitor_network_transmit(const char * buffer, size_t buffer_length)
 {
     int error = 0;
 
-    if (connected_socket) {
+    if (connected_socket && !telnet_client) {
         size_t len = (size_t)vice_network_send(connected_socket, buffer, buffer_length, 0);
 
         if (len != buffer_length) {
@@ -65,6 +108,32 @@ int monitor_network_transmit(const char * buffer, size_t buffer_length)
         } else {
             error = (int)len;
         }
+    } else if (connected_socket) {
+        /* telnet: LF -> CR LF, and a 0xff data byte is sent twice */
+        unsigned char out[512];
+        size_t outpos = 0;
+        size_t i;
+
+        for (i = 0; i < buffer_length; i++) {
+            unsigned char c = (unsigned char)buffer[i];
+
+            if (c == '\n' && !output_last_cr) {
+                out[outpos++] = '\r';
+            }
+            if (c == TELNET_IAC) {
+                out[outpos++] = TELNET_IAC;
+            }
+            out[outpos++] = c;
+            output_last_cr = (c == '\r');
+
+            if (outpos >= sizeof out - 3 || i == buffer_length - 1) {
+                if ((size_t)vice_network_send(connected_socket, out, outpos, 0) != outpos) {
+                    return -1;
+                }
+                outpos = 0;
+            }
+        }
+        error = (int)buffer_length;
     }
 
     return error;
@@ -74,6 +143,81 @@ static void monitor_network_quit(void)
 {
     vice_network_socket_close(connected_socket);
     connected_socket = NULL;
+    monitor_network_reset_connection_state();
+}
+
+/* refuse a telnet option the client offered or asked for */
+static void monitor_network_telnet_refuse(unsigned char cmd, unsigned char option)
+{
+    unsigned char reply[3];
+
+    reply[0] = TELNET_IAC;
+    reply[1] = (cmd == TELNET_WILL) ? TELNET_DONT : TELNET_WONT;
+    reply[2] = option;
+    vice_network_send(connected_socket, reply, sizeof reply, 0);
+}
+
+/* Remove telnet commands from received bytes, in place. All options are
+   refused, so the client stays in its default mode: it echoes and edits the
+   line itself and sends whole lines. Also drops NUL bytes (they would cut the
+   line buffer short) and the LF or NUL that follows a CR, so CR LF is one line
+   end even when it is split across two packets. Returns the new length. */
+static size_t monitor_network_filter_input(unsigned char *buf, size_t len)
+{
+    size_t in;
+    size_t out = 0;
+
+    for (in = 0; in < len; in++) {
+        unsigned char c = buf[in];
+
+        switch (telnet_state) {
+            case TELNET_STATE_DATA:
+                if (c == TELNET_IAC) {
+                    telnet_client = 1;
+                    telnet_state = TELNET_STATE_IAC;
+                    continue;
+                }
+                if (input_last_cr && (c == '\n' || c == 0)) {
+                    input_last_cr = 0;
+                    continue;
+                }
+                input_last_cr = (c == '\r');
+                if (c != 0) {
+                    buf[out++] = c;
+                }
+                break;
+            case TELNET_STATE_IAC:
+                if (c == TELNET_IAC) {
+                    /* escaped 0xff: not useful in a monitor command, drop it */
+                    telnet_state = TELNET_STATE_DATA;
+                } else if (c >= TELNET_WILL && c <= TELNET_DONT) {
+                    telnet_option_cmd = c;
+                    telnet_state = TELNET_STATE_OPTION;
+                } else if (c == TELNET_SB) {
+                    telnet_state = TELNET_STATE_SB;
+                } else {
+                    /* NOP, IP, AYT, ...: ignored */
+                    telnet_state = TELNET_STATE_DATA;
+                }
+                break;
+            case TELNET_STATE_OPTION:
+                if (telnet_option_cmd == TELNET_WILL || telnet_option_cmd == TELNET_DO) {
+                    monitor_network_telnet_refuse(telnet_option_cmd, c);
+                }
+                telnet_state = TELNET_STATE_DATA;
+                break;
+            case TELNET_STATE_SB:
+                if (c == TELNET_IAC) {
+                    telnet_state = TELNET_STATE_SB_IAC;
+                }
+                break;
+            case TELNET_STATE_SB_IAC:
+                telnet_state = (c == TELNET_SE) ? TELNET_STATE_DATA : TELNET_STATE_SB;
+                break;
+        }
+    }
+
+    return out;
 }
 
 ssize_t monitor_network_receive(char * buffer, size_t buffer_length)
@@ -107,6 +251,7 @@ static int monitor_network_data_available(void)
 
         if (vice_network_select_poll_one(listen_socket)) {
             connected_socket = vice_network_accept(listen_socket);
+            monitor_network_reset_connection_state();
         }
     }
 
@@ -114,11 +259,53 @@ static int monitor_network_data_available(void)
     return available;
 }
 
+/* Read what the client sent into cmd_buffer, without telnet commands.
+   Call only when data is available. Returns -1 when the connection was closed
+   (and closes it), else the number of text bytes added (0 for a packet that
+   held only telnet negotiation). */
+static int monitor_network_fill_buffer(void)
+{
+    size_t space = sizeof cmd_buffer - 1 - (size_t)cmd_bufferpos;
+    ssize_t n;
+    size_t added;
+
+    if (space == 0) {
+        return 0;
+    }
+
+    n = monitor_network_receive(cmd_buffer + cmd_bufferpos, space);
+    if (n <= 0) {
+        monitor_network_quit();
+        return -1;
+    }
+
+    added = monitor_network_filter_input((unsigned char *)cmd_buffer + cmd_bufferpos, (size_t)n);
+    cmd_bufferpos += (int)added;
+    cmd_buffer[cmd_bufferpos] = 0;
+
+    return (int)added;
+}
+
 void monitor_check_remote(void)
 {
     if (monitor_network_data_available()) {
-        monitor_startup_trap();
+        /* Read it now, so a telnet client is known before the monitor prints
+           anything, and telnet negotiation alone does not stop the machine. */
+        if (monitor_network_fill_buffer() < 0) {
+            return;
+        }
+        if (cmd_bufferpos > 0) {
+            monitor_startup_trap();
+        }
     }
+}
+
+int monitor_network_line_pending(void)
+{
+    return connected_socket != NULL
+        && (strchr(cmd_buffer, '\n') != NULL
+            || strchr(cmd_buffer, '\r') != NULL
+            || cmd_bufferpos >= (int)sizeof cmd_buffer - 1);
 }
 
 static char * monitor_network_extract_text_command_line(char * pbuffer, int buffer_size, int * pbuffer_pos)
@@ -171,42 +358,27 @@ static char * monitor_network_extract_text_command_line(char * pbuffer, int buff
     return p;
 }
 
+/* Returns 0 when the connection was closed. Else 1, with *prompt set to the
+   next command line, or to NULL when no complete line has arrived yet (the
+   part received so far is kept for the next call). */
 int monitor_network_get_command_line(char **prompt)
 {
-    static char buffer[260] = { 0 };
-    static int bufferpos = 0;
-
-    if(!monitor_network_data_available()) {
+    /* commands already received (several lines in one packet) come first */
+    *prompt = monitor_network_extract_text_command_line(cmd_buffer, sizeof cmd_buffer - 1, &cmd_bufferpos);
+    if (*prompt) {
         return 1;
     }
 
-    do {
-        /* Do not read more from network until all commands in current buffer is fully processed */
-        if (bufferpos == 0) {
-            ssize_t n = monitor_network_receive(buffer + bufferpos,
-                                                sizeof buffer - 1 - (size_t)bufferpos);
+    if (!monitor_network_data_available()) {
+        return 1;
+    }
 
-            if (n > 0) {
-                bufferpos += n;
-                buffer[bufferpos] = 0;
-            } else if (n <= 0) {
-                monitor_network_quit();
-                *prompt = NULL;
-                return 0;
-            }
-        }
+    if (monitor_network_fill_buffer() < 0) {
+        *prompt = NULL;
+        return 0;
+    }
 
-        *prompt = monitor_network_extract_text_command_line(buffer, sizeof buffer - 1, &bufferpos);
-        if (*prompt) {
-            break;
-        } else {
-            /* if no cmd was returned - reset buffer to start and fetch new cmd. */
-            bufferpos = 0;
-        }
-
-        ui_dispatch_events();
-    } while (1);
-
+    *prompt = monitor_network_extract_text_command_line(cmd_buffer, sizeof cmd_buffer - 1, &cmd_bufferpos);
     return 1;
 }
 
@@ -446,6 +618,11 @@ int monitor_network_transmit(const char * buffer, size_t buffer_length)
 }
 
 int monitor_network_get_command_line(char **prompt)
+{
+    return 0;
+}
+
+int monitor_network_line_pending(void)
 {
     return 0;
 }

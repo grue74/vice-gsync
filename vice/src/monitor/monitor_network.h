@@ -43,6 +43,7 @@ void monitor_check_remote(void);
 ssize_t monitor_network_receive(char * buffer, size_t buffer_length);
 int monitor_network_transmit(const char * buffer, size_t buffer_length);
 int monitor_network_get_command_line(char **prompt);
+int monitor_network_line_pending(void);
 
 int monitor_is_remote(void);
 vice_network_socket_t *monitor_get_connected_socket(void);

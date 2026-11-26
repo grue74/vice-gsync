@@ -518,9 +518,12 @@ char *uimon_in(const char *prompt)
 
         if (monitor_is_remote() || monitor_is_binary()) {
 
-            mainlock_yield_begin();
-            vice_network_select_multiple(sockfd);
-            mainlock_yield_end();
+            /* no waiting while a received command line is still unprocessed */
+            if (!monitor_network_line_pending()) {
+                mainlock_yield_begin();
+                vice_network_select_multiple(sockfd);
+                mainlock_yield_end();
+            }
 
             if (monitor_is_binary()) {
                 if (!monitor_binary_get_command_line()) {
