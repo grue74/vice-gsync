@@ -336,7 +336,7 @@ function(vice_resolve_libs out tokens)
 endfunction()
 
 # Libraries whose sources configure selects via @SUBST@ need explicit extras
-set(_sound_extra soundwmm.c)
+set(_sound_extra soundwmm.c soundwasapi.c)
 if(USE_SDL_AUDIO)
     list(APPEND _sound_extra soundsdl.c)
 endif()

@@ -114,6 +114,7 @@ static const sound_register_devices_t sound_register_devices[] = {
     { "dx", "DirectSound sound output", sound_init_dx_device, SOUND_PLAYBACK_DEVICE },
 #endif
     { "wmm", "Windows Waveout sound output", sound_init_wmm_device, SOUND_PLAYBACK_DEVICE },
+    { "wasapi", "Windows WASAPI sound output", sound_init_wasapi_device, SOUND_PLAYBACK_DEVICE },
 #endif
 
 #ifdef BEOS_COMPILE

@@ -2720,7 +2720,8 @@ dsound_header_no_lib="no"
 
 if test x"$is_win32" = "xyes" -o x"$is_win32_gtk3" = "xyes"; then
     if test x"$enable_sdl1ui" != "xyes" -a x"$enable_sdl2ui" != "xyes"; then
-        SOUND_DRIVERS="$SOUND_DRIVERS soundwmm.o"
+        SOUND_DRIVERS="$SOUND_DRIVERS soundwmm.o soundwasapi.o"
+        SOUND_LIBS="$SOUND_LIBS -lole32"
         AC_MSG_CHECKING(whether we can use directx sound)
         AC_CHECK_HEADER(dsound.h,
               [ AC_DEFINE(USE_DXSOUND,,[Enable directx sound support.])
@@ -2760,7 +2761,8 @@ if test x"$is_win32" = "xyes" -o x"$is_win32_gtk3" = "xyes"; then
                               )
         fi
     else
-        SOUND_DRIVERS="$SOUND_DRIVERS soundwmm.o"
+        SOUND_DRIVERS="$SOUND_DRIVERS soundwmm.o soundwasapi.o"
+        SOUND_LIBS="$SOUND_LIBS -lole32"
     fi
 fi
 

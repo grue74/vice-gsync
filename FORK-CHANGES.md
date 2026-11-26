@@ -450,3 +450,42 @@ area; each page is in a scrolled window, so a page taller than the dialog
 scrolls instead of pushing the dialog off the screen. A resized dialog
 reopens at that size until VICE exits. The old size is the minimum (smaller
 on small screens).
+
+---
+
+## 9. Windows: WASAPI sound driver
+
+Files: `src/arch/shared/sounddrv/soundwasapi.c` (new),
+`src/arch/shared/sounddrv/Makefile.am`, `src/sound.c`, `src/sound.h`,
+`configure.ac`, `CMakeLists.txt`
+
+**Why:** with sound on, the emulator is paced by the sound driver, so frames
+reach the screen exactly as evenly as the driver reports free buffer space.
+DirectSound (`dx`) reports it in ~10 ms steps, and the video frame pacing then
+has to hold more latency to smooth that out.
+
+**What:** a `wasapi` playback driver (shared mode, VICE's own rate and 16-bit
+samples through Windows' automatic conversion, 200 ms endpoint buffer). Free
+space comes from the audio clock's play position, extrapolated to "now" with
+the performance counter, so it grows sample by sample; WASAPI's own buffer
+fill (which moves in 10 ms engine periods) is only a sanity window. Listed
+after `wmm`, not the default. With `-verbose` the log reports on exit how
+often the play position had to be corrected (underruns).
+
+**Measured** (x64sc, 48 kHz, frame arrival times recorded, then replayed
+through the DirectX pacing logic for a 240 Hz display):
+
+| Driver, settings                          | Arrival spread | Pacing latency (median / max) |
+|-------------------------------------------|----------------|-------------------------------|
+| `dx`, defaults                            | 22-25 ms       | 7.4 / 15.7 ms                 |
+| `wmm`, defaults                           | 6-8 ms         | 4.5 / 9.2 ms                  |
+| `wasapi`, very small fragments, 30 ms     | 6-8 ms         | 4.9 / 8.9 ms                  |
+
+So `wasapi` and `wmm` are about equal; both are much better than `dx`.
+`wasapi` also works with the smallest fragment size (0.67 ms), where `wmm`
+fails to open. The remaining jitter comes from the sound core (whole
+fragments, ~1 ms polling), not from the driver.
+
+**Settings:** fragment size "Very small", buffer 30 ms (20 ms broke up on the
+test machine; WASAPI's engine period is 10 ms), sample rate the same as the
+Windows device format (usually 48000 Hz).

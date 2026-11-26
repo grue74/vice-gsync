@@ -147,6 +147,7 @@ enum {
     SOUND_DEVICE_PLAYBACK_SUN_NETBSD,
     SOUND_DEVICE_PLAYBACK_DX,
     SOUND_DEVICE_PLAYBACK_WMM,
+    SOUND_DEVICE_PLAYBACK_WASAPI,
     SOUND_DEVICE_PLAYBACK_BEOS,
     SOUND_DEVICE_PLAYBACK_BSP,
     SOUND_DEVICE_PLAYBACK_SDL,
@@ -289,6 +290,7 @@ int sound_init_dx_device(void);
 int sound_init_beos_device(void);
 int sound_init_bsp_device(void);
 int sound_init_wmm_device(void);
+int sound_init_wasapi_device(void);
 int sound_init_movie_device(void);
 int sound_init_coreaudio_device(void);
 int sound_init_voc_device(void);
