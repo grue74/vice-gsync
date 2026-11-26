@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [ -z "$BASH_VERSINFO" ] || [ "$BASH_VERSINFO" -lt 4 ]; then
-    echo "Bash version 4 or higher is required"
+if [ -z "$BASH_VERSINFO" ] || [ "$BASH_VERSINFO" -lt 3 ]; then
+    echo "Bash version 3 or higher is required"
     # if macos, install bash via homebrew and run this script with the full path to the new bash
     if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "On macOS, install bash via macports or homebrew and try again."
@@ -338,7 +338,10 @@ for F in `find $SOURCE -iname "*.c" -exec grep -lin snapshot {} \;`; do
 #if there are two or more tables in the same file, we use a different/new method
 
         # read grep hits into an array (each entry in the array contains multiple lines)
-        readarray -t tabarray <<< `grep -i "snapshot module" $F`
+        tabarray=()
+        while IFS= read -r line; do
+            tabarray+=("$line")
+        done < <(grep -i "snapshot module" "$F")
 
         for I in "${tabarray[@]}"; do
 
