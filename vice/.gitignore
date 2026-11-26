@@ -2,3 +2,25 @@
 /out/
 /.vs/
 /CMakeUserPresets.json
+
+# autotools output from running ./autogen.sh in the source tree
+Makefile.in
+aclocal.m4
+autom4te.cache/
+.aclocal.out
+.autoconf.out
+.autoheader.out
+.automake.out
+/configure
+/compile
+/depcomp
+/missing
+/ylwrap
+/src/config.h.in
+/src/lib/libresidfp/configure
+/src/resid/configure
+/src/resid/COPYING
+/src/resid/INSTALL
+/src/resid-dtv/configure
+/src/resid-dtv/COPYING
+/src/resid-dtv/INSTALL
