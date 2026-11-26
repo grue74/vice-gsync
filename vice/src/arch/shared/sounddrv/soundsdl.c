@@ -111,7 +111,12 @@ static int sdl_init(const char *param, int *speed,
     spec.freq = *speed;
     spec.format = AUDIO_S16SYS;
     spec.channels = (Uint8)*channels;
-#ifdef USE_SDL2UI
+#if defined(USE_SDL2UI) || SDL_VERSION_ATLEAST(2, 0, 0)
+    /*
+     * SDL2 (also with the GTK3 UI): small callbacks. The emulator is paced by
+     * how fast this buffer drains, so the callback size is the step in which
+     * frames reach the screen; 1024 samples would be over 20 ms at 48 kHz.
+     */
     spec.samples = (Uint16)(*fragsize * 2);
 #else
     spec.samples = (Uint16)((*fragsize < 512) ? 1024 : (*fragsize * 2));

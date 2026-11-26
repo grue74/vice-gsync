@@ -489,3 +489,10 @@ fragments, ~1 ms polling), not from the driver.
 **Settings:** fragment size "Very small", buffer 30 ms (20 ms broke up on the
 test machine; WASAPI's engine period is 10 ms), sample rate the same as the
 Windows device format (usually 48000 Hz).
+
+**SDL sound with the GTK3 UI:** when VICE is built with `--with-sdlsound`,
+the SDL driver now uses small callbacks with SDL2 (twice the fragment size),
+as the SDL UI already did. Before, GTK3 builds asked SDL for at least 1024
+samples per callback (over 20 ms at 48 kHz), which made frame delivery
+bursty. (The release build doesn't include SDL sound; measured with it, SDL
+was between `dx` and `wmm`.)
