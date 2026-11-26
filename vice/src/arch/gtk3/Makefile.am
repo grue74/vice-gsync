@@ -135,7 +135,7 @@ libarch_a_SOURCES += opengl_renderer.c
 if MACOS_COMPILE
 libarch_a_SOURCES += opengl_renderer_macos.m
 else
-libarch_a_SOURCES += opengl_renderer_unix.c
+libarch_a_SOURCES += opengl_renderer_unix.c opengl_pacing.c
 endif
 endif
 
@@ -176,6 +176,7 @@ EXTRA_DIST = \
 	make-bindist_win32.sh \
 	mousedrv.h \
 	opengl_renderer.h \
+	opengl_pacing.h \
 	render_queue.h \
 	render_thread.h \
 	ui.h \

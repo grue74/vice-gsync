@@ -64,6 +64,18 @@ Notes: for VRR in a window, the VICE window has to be focused (Windows
 composes unfocused windows at the fixed refresh rate). The `wmm` sound
 driver delivers frames more evenly than `dx`, so it needs less latency.
 
+**Linux (and other X11 systems), new and less tested:** the frame pacing and
+frame doubling now also exist in the OpenGL renderer
+(`src/arch/gtk3/opengl_pacing.c/.h`, used by `opengl_renderer.c`; the render
+queue has 4 backbuffers on all platforms except macOS). It is the same
+method as on Windows, with POSIX timers; the display refresh rate comes from
+GTK. Built and run under WSL (WSLg, 60 Hz, no real VSync): presents were
+spread by ±0.18 ms instead of ±5.8 ms without pacing, for about 9 ms more
+latency. Not yet tried on a real Linux desktop or with VRR there, so it
+should work on Linux now, but isn't confirmed. VRR on Linux usually needs
+fullscreen and driver/compositor support. CRT beam simulation is still
+Windows only, and macOS is unchanged.
+
 ---
 
 ## 2. x64 and x64sc: Ultimate 64 style CPU turbo

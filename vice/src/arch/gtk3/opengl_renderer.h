@@ -34,6 +34,7 @@
 #ifndef MACOS_COMPILE
 #include <X11/Xlib.h>
 #include <GL/glxew.h>
+#include "opengl_pacing.h"
 #endif
 
 #include <stdbool.h>
@@ -162,6 +163,14 @@ typedef struct vice_opengl_renderer_context_s {
 
     /** \brief cached value of the vsync resource to avoid setting it each frame */
     unsigned long cached_vsync_resource;
+
+#ifndef MACOS_COMPILE
+    /** \brief frame pacing with VSync on (see opengl_pacing.c) */
+    opengl_pacing_t pacing;
+
+    /** \brief UI frame clock ticks until the monitor refresh rate is checked again */
+    int display_check;
+#endif
 
 } vice_opengl_renderer_context_t;
 

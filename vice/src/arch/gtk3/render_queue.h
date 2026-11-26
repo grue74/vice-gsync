@@ -29,11 +29,12 @@
 
 #include "vice.h"
 
-#ifdef WINDOWS_COMPILE
+#ifndef MACOS_COMPILE
 /*
- * The DirectX renderer paces presents with VSync on: frames wait a few ms for
- * their turn while the emulator, driven by the audio device, may already
- * deliver the next ones in a burst. Room for those, or they would be dropped.
+ * The DirectX renderer and the OpenGL renderer on X11 pace presents with
+ * VSync on: frames wait a few ms for their turn while the emulator, driven by
+ * the audio device, may already deliver the next ones in a burst. Room for
+ * those, or they would be dropped.
  */
 #define RENDER_QUEUE_MAX_BACKBUFFERS 4
 #else
