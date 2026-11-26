@@ -15,6 +15,26 @@ Details, reasons and settings for each change are in
 [FORK-CHANGES.md](FORK-CHANGES.md). Windows builds are on the
 [releases page](https://github.com/grue74/vice-gsync/releases).
 
+### Build on macOS (GTK3)
+
+Install the Xcode command line tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh/), then run from the clone's root:
+
+```sh
+sh vice/build/macOS/install-deps.sh
+export PATH="$(brew --prefix)/bin:$PATH"
+cd vice
+./autogen.sh
+./configure --enable-gtk3ui
+make -j "$(sysctl -n hw.ncpu)"
+```
+
+The emulators are in `vice/src/` (`x64sc`, `x128`, `vsid`, etc.).
+`vice/src/x64sc --version` prints the version without opening a window.
+Add `--enable-x64` to configure to build the older `x64` emulator too.
+See [macOS build notes](vice/doc/building/macOS-Howto.txt) for installation,
+SDL2 and optional dependencies.
+
 ### Work so far
 
 Video:
@@ -55,4 +75,3 @@ For news, documentation, developer information, [visit the VICE website](https:/
 ## Download VICE
 * [Official Releases](https://vice-emu.sourceforge.io/#download)
 * [Snapshot builds of the latest code](https://github.com/VICE-Team/svn-mirror/releases)
-
