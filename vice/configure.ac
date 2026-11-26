@@ -374,9 +374,7 @@ else
 fi
 
 dnl Check for dos2unix
-AC_CHECK_PROGS(DOS2UNIX, dos2unix, no)
-AS_IF([test x"$DOS2UNIX" = "xno"],
-      [AC_MSG_ERROR([The dos2unix tool is missing, please install dos2unix])])
+AC_CHECK_PROGS(DOS2UNIX, dos2unix, dos2unix)
 
 dnl Check for xa[65]
 AC_CHECK_PROGS(XA, [xa xa65], no)
