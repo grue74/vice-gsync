@@ -1,4 +1,4 @@
-# VICE GitHub Mirror
+# vice-gsync: a personal fork of VICE
 
 ## About this fork (vice-gsync)
 
@@ -65,13 +65,17 @@ Features:
 - Status bar mixer: C1/C2 and the other filter sliders.
 - Larger settings dialog; pages that don't fit scroll.
 - CMake / Visual Studio (MSVC + vcpkg) build.
+- Remote monitor works with telnet clients such as PuTTY.
 
 ---
 
-This is the official git mirror of the [VICE subversion repo](https://sourceforge.net/p/vice-emu/code/HEAD/tree/).
+This is **not** the official VICE repository. It is a personal fork of the
+official git mirror, [VICE-Team/svn-mirror](https://github.com/VICE-Team/svn-mirror),
+which mirrors the [VICE subversion repo](https://sourceforge.net/p/vice-emu/code/HEAD/tree/).
+Please don't report problems with this fork's changes to the VICE team.
 
 For news, documentation, developer information, [visit the VICE website](https://vice-emu.sourceforge.io/).
 
-## Download VICE
+## Download official VICE
 * [Official Releases](https://vice-emu.sourceforge.io/#download)
 * [Snapshot builds of the latest code](https://github.com/VICE-Team/svn-mirror/releases)
