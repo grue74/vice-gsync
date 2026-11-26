@@ -423,3 +423,18 @@ filter settings. VSID's sound recording menu entries were disabled
 - **Build:** MP3 needs LAME. On MSYS2: `pacman -S mingw-w64-x86_64-lame`,
   then configure with `--with-lame --with-static-lame --with-flac
   --with-vorbis` (static LAME: no extra DLL in the release).
+
+---
+
+## 8. GTK3: larger settings dialog with scrolling pages
+
+File: `src/arch/gtk3/uisettings.c`
+
+**Why:** the SID settings pages (filter tunables, curve graph) did not fit in
+the fixed ~920x560 settings dialog.
+
+**What:** the dialog opens at up to 1280x960, limited to the screen's work
+area; each page is in a scrolled window, so a page taller than the dialog
+scrolls instead of pushing the dialog off the screen. A resized dialog
+reopens at that size until VICE exits. The old size is the minimum (smaller
+on small screens).

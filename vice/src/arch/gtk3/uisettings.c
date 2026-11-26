@@ -2106,6 +2106,28 @@ static gint settings_xpos = INT_MIN;
  */
 static gint settings_ypos = INT_MIN;
 
+/** \brief  Previous width of settings dialog (0 = not yet shown)
+ */
+static gint settings_width = 0;
+
+/** \brief  Previous height of settings dialog (0 = not yet shown)
+ */
+static gint settings_height = 0;
+
+/** \brief  Largest default size of the dialog on a big screen
+ *
+ * The pages are in a scrolled window, so a page taller than the dialog gets a
+ * scroll bar instead of pushing the dialog off the screen. On a large screen
+ * the dialog starts this big so the bigger pages (SID settings) fit without
+ * scrolling.
+ */
+#define DIALOG_DEFAULT_WIDTH_BIG    1280
+#define DIALOG_DEFAULT_HEIGHT_BIG   960
+
+/** \brief  Space left free around the dialog on the screen's work area
+ */
+#define DIALOG_SCREEN_MARGIN        64
+
 /** \brief  Reference to the 'content area' widget of the settings dialog
  */
 static GtkWidget *settings_grid = NULL;
@@ -2477,17 +2499,71 @@ static GtkWidget *create_treeview(void)
 static void ui_settings_set_central_widget(GtkWidget *widget)
 {
     GtkWidget *child;
+    GtkWidget *scroller;
+    GtkWidget *viewport;
 
     child = gtk_paned_get_child2(GTK_PANED(paned_widget));
     if (child != NULL) {
         gtk_widget_destroy(child);
     }
-    gtk_paned_pack2(GTK_PANED(paned_widget), widget, TRUE, FALSE);
+    /* Put the page in a scrolled window: a page taller than the dialog gets
+     * a vertical scroll bar instead of growing the dialog off the screen.
+     * The page's natural width is still requested, so pages are not squeezed
+     * sideways. */
+    scroller = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scroller),
+                                                    TRUE);
+    gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(scroller),
+                                              FALSE);
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_widget_set_vexpand(scroller, TRUE);
+    viewport = gtk_viewport_new(NULL, NULL);
+    gtk_viewport_set_shadow_type(GTK_VIEWPORT(viewport), GTK_SHADOW_NONE);
+    gtk_container_add(GTK_CONTAINER(viewport), widget);
+    gtk_container_add(GTK_CONTAINER(scroller), viewport);
+    gtk_widget_show(viewport);
+    gtk_widget_show(scroller);
+    gtk_paned_pack2(GTK_PANED(paned_widget), scroller, TRUE, FALSE);
     /* add a little space around the widget */
     gtk_widget_set_margin_top(widget, 8);
     gtk_widget_set_margin_start(widget, 8);
     gtk_widget_set_margin_end(widget, 8);
     gtk_widget_set_margin_bottom(widget, 8);
+}
+
+/** \brief  Get the work area of the monitor the emulator window is on
+ *
+ * \param[out] area    work area (screen minus task bars)
+ */
+static void get_dialog_workarea(GdkRectangle *area)
+{
+    GdkDisplay *display = gdk_display_get_default();
+    GdkMonitor *monitor = NULL;
+    GtkWidget  *parent  = GTK_WIDGET(ui_get_active_window());
+
+    area->x = 0;
+    area->y = 0;
+    area->width = DIALOG_DEFAULT_WIDTH_BIG + DIALOG_SCREEN_MARGIN;
+    area->height = DIALOG_DEFAULT_HEIGHT_BIG + DIALOG_SCREEN_MARGIN;
+    if (display == NULL) {
+        return;
+    }
+    if (parent != NULL && gtk_widget_get_window(parent) != NULL) {
+        monitor = gdk_display_get_monitor_at_window(display,
+                gtk_widget_get_window(parent));
+    }
+    if (monitor == NULL) {
+        monitor = gdk_display_get_primary_monitor(display);
+    }
+    if (monitor == NULL) {
+        monitor = gdk_display_get_monitor(display, 0);
+    }
+    if (monitor != NULL) {
+        gdk_monitor_get_workarea(monitor, area);
+    }
 }
 
 /** \brief  Create the 'content widget' of the settings dialog
@@ -2603,7 +2679,18 @@ static GtkWidget *create_content_widget(GtkWidget *dialog)
     gtk_widget_show_all(extra);
 
     gtk_widget_set_size_request(scrolled_window, 270, -1);
-    gtk_widget_set_size_request(settings_grid, DIALOG_WIDTH, DIALOG_HEIGHT);
+    /* minimum size: the old fixed size, but never more than the screen */
+    {
+        GdkRectangle area;
+        int          min_w;
+        int          min_h;
+
+        get_dialog_workarea(&area);
+        min_w = MIN(DIALOG_WIDTH, area.width - DIALOG_SCREEN_MARGIN);
+        min_h = MIN(DIALOG_HEIGHT, area.height - DIALOG_SCREEN_MARGIN * 2);
+        gtk_widget_set_size_request(settings_grid,
+                                    MAX(min_w, 400), MAX(min_h, 300));
+    }
 
     selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(settings_tree));
     gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
@@ -2643,6 +2730,8 @@ static void response_callback(GtkWidget *widget,
         int pause_on_settings = 0;
         DBG(("response_callback"));
 
+        /* remember the size for the next time the dialog is opened */
+        gtk_window_get_size(GTK_WINDOW(widget), &settings_width, &settings_height);
         gtk_widget_destroy(widget);
         settings_window = NULL;
 
@@ -2725,6 +2814,27 @@ static GtkWidget *dialog_create_helper(void)
     /* XXX: maybe we can set this to FALSE once all dialog nodes fit the
      *      initial size: */
     gtk_window_set_resizable(GTK_WINDOW(dialog), TRUE);
+
+    /* Start big enough for the larger pages: the size used last time, or
+     * on first use as large as the screen allows up to a limit. Pages that
+     * still don't fit scroll. */
+    {
+        GdkRectangle area;
+        int          width;
+        int          height;
+
+        get_dialog_workarea(&area);
+        if (settings_width > 0 && settings_height > 0) {
+            width = settings_width;
+            height = settings_height;
+        } else {
+            width = DIALOG_DEFAULT_WIDTH_BIG;
+            height = DIALOG_DEFAULT_HEIGHT_BIG;
+        }
+        width = MIN(width, area.width - DIALOG_SCREEN_MARGIN);
+        height = MIN(height, area.height - DIALOG_SCREEN_MARGIN);
+        gtk_window_set_default_size(GTK_WINDOW(dialog), width, height);
+    }
 
     content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     g_object_set(content, "border-width", 8, NULL);
